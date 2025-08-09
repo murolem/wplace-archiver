@@ -7,27 +7,53 @@ import { wait } from '$utils/wait';
 import chalk from 'chalk';
 import { roundToDigit } from '$utils/roundToDigit';
 import { clamp } from '$utils/clamp';
+import { noop } from '$utils/noop';
 const logger = new Logger("main");
 const { logInfo, logError } = logger;
 
-// ========================
+// =======================
+// ====== VARIABLES ======
+// =======================
 
-const dimensions = 2048
+/** Concurrent requests count. */
 const concurrentRequests = 100;
+/** Requests per second. */
 const requestsPerSecond = 500;
+/** Fetch queue size target. */
 const targetQueueSize = concurrentRequests + 100;
+/** Cooldown before archival cycles. One cycle is a full archival. */
 const cycleCooldownSec = 15;
 
+/** How many columns to fit in one subdirectory under archival directory. Archiving is running column by column. */
+const subdirEveryNCols = 32;
+/** Prefix for a directory that will contain archived data. */
 const outDirPrefix = "archive";
-const outErrorsDirPrefix = "archive-ERROR";
-const subdirEveryNRows = 100;
+/** Prefix for a directory that will contain errors while archiving data. */
+const outErrorsDirPrefix = "archive-ERRORS";
 
-const unknownErrorRetryDelayMs = 500;
+/** Delay in ms on unknown errors. */
+const unknownErrorRetryDelayMs = 0.5 * 1000;
+/** Delay in ms when server dies. */
+const serverIsDownErrorRetryDelayMs = 30 * 1000;
+
+/** Delay between fetch logs. Only affects info logs, errors will always be shown. */
+const logIntervalMs = 100;
+
+/** Formatting option for percentage progress for logging. */
 const progressPercentageDigitsAfterComma = 3;
 
-// ========================
+// =======================
+// ==== END VARIABLES ====
+// =======================
+
+/** Map dimensions in tiles. */
+const dimensions = 2048;
+const dimensionsStrLength = dimensions.toString().length;
 
 const tilesTotal = dimensions ** 2;
+
+let lastLogTs = 0;
+let nextLogAfterTs = 0;
 
 const queue = new PQueue({ concurrency: concurrentRequests, interval: 1000, intervalCap: requestsPerSecond });
 
@@ -43,15 +69,21 @@ async function main(outDirName: string, outErrDirName: string) {
         attemptIndex = attemptIndex ?? 0;
 
         return async () => {
+            const ts = Date.now();
+            // swap row and col so that we iteratie over cols first
             const {
-                x: col,
-                y: row
+                x: row,
+                y: col
             } = convertTileIndexToTilePos(tileIndex);
+            const colFmted = col.toString().padStart(dimensionsStrLength, '0');
+            const rowFmted = row.toString().padStart(dimensionsStrLength, '0');
 
             const subdir = (() => {
-                const from = Math.floor(row / subdirEveryNRows) * subdirEveryNRows;
-                const to = clamp(from + subdirEveryNRows, 0, dimensions);
-                return `${from}-${to}`;
+                const from = Math.floor(col / subdirEveryNCols) * subdirEveryNCols;
+                const to = clamp(from + subdirEveryNCols, 0, dimensions);
+                const fromFmted = from.toString().padStart(dimensionsStrLength, '0');
+                const toFmted = to.toString().padStart(dimensionsStrLength, '0');
+                return `C${fromFmted}-C${toFmted}`;
             })();
 
             if (!createdSubdirs.has(subdir)) {
@@ -68,15 +100,20 @@ async function main(outDirName: string, outErrDirName: string) {
                     + (parts[1] ?? '').padEnd(progressPercentageDigitsAfterComma, '0');
                 ;
             })();
-            const colFmted = col.toString().padStart(dimensions.toString().length, '0');
-            const rowFmted = row.toString().padStart(dimensions.toString().length, '0');
 
             const logger = new Logger(`${progressPercentageAllTilesFmted}% COL ${colFmted} ROW ${rowFmted}`);
-            const { logInfo, logError } = logger;
+            const { logError } = logger;
+            let { logInfo } = logger;
+            if (ts <= nextLogAfterTs) {
+                logInfo = noop;
+            } else {
+                lastLogTs = ts;
+                nextLogAfterTs = ts + logIntervalMs;
+            }
 
 
             const writeImage = async (imgData: ArrayBuffer) => {
-                const outFilepath = path.join(outDirName, subdir, `${row}-${col}.png`);
+                const outFilepath = path.join(outDirName, subdir, `C${colFmted}-R${rowFmted}.png`);
                 await fs.writeFile(outFilepath, Buffer.from(imgData));
             }
 
@@ -86,7 +123,7 @@ async function main(outDirName: string, outErrDirName: string) {
                     outErrDirExists = true;
                 }
 
-                const outFilepath = path.join(outErrDirName, `${row}-${col}-${attemptIndex}.txt`)
+                const outFilepath = path.join(outErrDirName, `C${colFmted}-R${rowFmted}-N${attemptIndex}.txt`)
                 fs.writeFile(outFilepath, data);
             }
 
@@ -110,10 +147,19 @@ async function main(outDirName: string, outErrDirName: string) {
                 queue.add(mkTask(tileIndex, attemptIndex + 1));
                 return;
             } else if (!res.ok) {
-                if (res.status === 404) {
-                    logInfo(chalk.gray(`tile doesn't exist, skipping`));
+                switch (res.status) {
+                    case 404: {
+                        logInfo(chalk.gray(`tile doesn't exist, skipping`));
 
-                    return;
+                        return;
+                    } case 521: {
+                        logInfo(`server is dead, waiting for ${serverIsDownErrorRetryDelayMs}ms before retrying`);
+                        await wait(serverIsDownErrorRetryDelayMs);
+
+                        queue.add(mkTask(tileIndex, attemptIndex + 1));
+                        return;
+                    }
+
                 }
 
                 logError(`non-ok response code: ${res.status}: ${res.statusText}; writing response, queueing retry...`);
