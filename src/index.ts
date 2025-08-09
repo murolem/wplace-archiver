@@ -165,7 +165,9 @@ async function main(outDirName: string, outErrDirName: string) {
                 logError(`non-ok response code: ${res.status}: ${res.statusText}; writing response, queueing retry...`);
                 const body = await res.text()
                     .catch(err => {
-                        logError("error while trying to retrieve body");
+                        logError("error while trying to retrieve body on a non-ok status");
+                        writeErrournousRequestData(stringifyErrorToJson(err));
+
                         return Promise.resolve<"error">("error");
                     });
 
@@ -181,7 +183,20 @@ async function main(outDirName: string, outErrDirName: string) {
                 return;
             }
 
-            const data = await res.arrayBuffer();
+            const data = await res.arrayBuffer()
+                .catch(err => {
+                    logError("error while trying to retrieve body as image");
+                    writeErrournousRequestData(stringifyErrorToJson(err));
+
+                    return Promise.resolve<"error">("error");
+                });
+
+            if (data === 'error') {
+                await wait(unknownErrorRetryDelayMs);
+                queue.add(mkTask(tileIndex, attemptIndex + 1));
+                return;
+            }
+
             await writeImage(data);
 
             logInfo(`✅`)
