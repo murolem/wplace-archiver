@@ -8,6 +8,7 @@ import chalk from 'chalk';
 import { roundToDigit } from '$utils/roundToDigit';
 import { clamp } from '$utils/clamp';
 import { noop } from '$utils/noop';
+import { toOsPath } from '$utils/toOsPath';
 const logger = new Logger("main");
 const { logInfo, logError } = logger;
 
@@ -27,9 +28,9 @@ const cycleCooldownSec = 15;
 /** How many columns to fit in one subdirectory under archival directory. Archiving is running column by column. */
 const subdirEveryNCols = 32;
 /** Prefix for a directory that will contain archived data. */
-const outDirPrefix = "archive";
+const outDirPrefix = toOsPath("archives/archive");
 /** Prefix for a directory that will contain errors while archiving data. */
-const outErrorsDirPrefix = "archive-ERRORS";
+const outErrorsDirPrefix = toOsPath("archives/archive-ERRORS");
 
 /** Delay in ms on unknown errors. */
 const unknownErrorRetryDelayMs = 0.5 * 1000;
@@ -60,7 +61,7 @@ const queue = new PQueue({ concurrency: concurrentRequests, interval: 1000, inte
 const convertTileIndexToTilePos = (index: number) => convertIndexToXyPosition(index, dimensions);
 
 async function main(outDirName: string, outErrDirName: string) {
-    fs.mkdirSync(outDirName);
+    fs.mkdirSync(outDirName, { recursive: true });
     let outErrDirExists = false;
 
     const createdSubdirs = new Set();
@@ -119,7 +120,7 @@ async function main(outDirName: string, outErrDirName: string) {
 
             const writeErrournousRequestData = (data: string) => {
                 if (!outErrDirExists) {
-                    fs.mkdirSync(outErrDirName);
+                    fs.mkdirSync(outErrDirName, { recursive: true });
                     outErrDirExists = true;
                 }
 
@@ -216,8 +217,8 @@ while (true) {
     logInfo(`starting archival cycle; start time: ${timeStart.toISOString()}`);
 
     const timeStartFmted = formatDateToFsSafeIsolike(timeStart);
-    let outDirName = `${outDirPrefix}-${timeStartFmted}`;
-    let outErrDirName = `${outErrorsDirPrefix}-${timeStartFmted}`;
+    let outDirName = `${outDirPrefix}--${timeStartFmted}`;
+    let outErrDirName = `${outErrorsDirPrefix}--${timeStartFmted}`;
 
     await main(outDirName, outErrDirName);
 
@@ -228,8 +229,8 @@ while (true) {
     // add end timestamp to the dirs
     const outDirNameOld = outDirName;
     const outErrDirNameOld = outErrDirName;
-    outDirName = `${outDirNameOld}-${timeEndFmted}`;
-    outErrDirName = `${outErrDirNameOld}-${timeEndFmted}`;
+    outDirName = `${outDirNameOld}--${timeEndFmted}`;
+    outErrDirName = `${outErrDirNameOld}--${timeEndFmted}`;
     fs.renameSync(outDirNameOld, outDirName);
     if (fs.existsSync(outErrDirNameOld))
         fs.renameSync(outErrDirNameOld, outErrDirName);
