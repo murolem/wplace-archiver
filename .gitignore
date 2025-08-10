@@ -1,4 +1,5 @@
 archiv*
+*.log
 
 # Logs
 logs
