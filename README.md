@@ -4,6 +4,8 @@
 
 An archiver script for wplace.live. Preserve 🧡
 
+Currently archived: see [wplace-archives](https://github.com/murolem/wplace-archives).
+
 Saves all map tiles to a folder in parallel. Takes about 2 hours with 500 requests per second (default). Saving is done continuously, so once one archival is complete next begins.
 
 Empty tiles do not exists on the server, so they are not saved. The entire map is 2048 by 2048 tiles in total.
