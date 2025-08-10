@@ -1,5 +1,7 @@
 # wplace-archiver
 
+### UPDATE: wplace introduced an RPS limit so archiving at the good speed is now impossible. At the moment of writing this, the limit is about 8-10 RPS, which equals to about 120 hours of archiving compared to previous 2 hours at 500 RPS. RIP.
+
 An archiver script for wplace.live. Preserve 🧡
 
 Saves all map tiles to a folder in parallel. Takes about 2 hours with 500 requests per second (default). Saving is done continuously, so once one archival is complete next begins.
