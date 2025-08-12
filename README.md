@@ -6,7 +6,7 @@ Currently archived: see [wplace-archives](https://github.com/murolem/wplace-arch
 
 ## Usage
 
-Get a binary from [releases](https://github.com/murolem/wplace-archiver/releases). Binaries are available for linux-x64 and windows-x64 (untested).
+Grab a binary from [releases](https://github.com/murolem/wplace-archiver/releases/latest). Binaries are available for linux-x64 and windows-x64 (untested).
 
 To run:
 
