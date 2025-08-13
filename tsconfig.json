@@ -19,6 +19,9 @@
       "$logger": [
         "./src/utils/logger.ts"
       ],
+      "$lib/*": [
+        "./src/lib/*"
+      ],
       "$utils/*": [
         "./src/utils/*"
       ],
@@ -37,7 +40,6 @@
     "noEmit": true,
     /* Linting */
     "strict": true,
-    "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },

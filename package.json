@@ -29,6 +29,7 @@
     "fs-extra": "^11.3.1",
     "humanize-duration": "^3.33.0",
     "humanize-number": "^0.0.2",
+    "neverthrow": "^8.2.0",
     "node-fetch": "^3.3.2",
     "p-queue": "^8.1.0",
     "pkg": "^5.8.1",

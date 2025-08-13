@@ -5,10 +5,27 @@ export type RegionOpts = {
     out: string
 }
 
+export type GrubbyOpts = {
+    threshold: number,
+    out: string
+}
+
 export type GeneralOptions = {
     out: string,
     loop: boolean,
     requestsPerSecond?: number,
     requestsPerMinute: number,
     requestConcurrency: number
+}
+
+export type TileImage = ArrayBuffer;
+
+export type Position = {
+    x: number,
+    y: number
+}
+
+export type Size = {
+    w: number,
+    h: number
 }

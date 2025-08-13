@@ -1,5 +1,5 @@
-import { saveRegion, type Position, type Region, type Size } from '$src/saveRegion';
-import type { GeneralOptions } from '$src/types';
+import { saveRegion, type Region } from '$src/saveRegion';
+import type { GeneralOptions, Position, Size } from '$src/types';
 import { Option, program } from '@commander-js/extra-typings';
 import { z } from 'zod';
 
@@ -34,6 +34,15 @@ function parseRadiusOption(value: string): number {
     }
 }
 
+function parseTilePixelCount(value: string): number {
+    try {
+        return z.coerce.number().int().min(1).max(1_000_000)
+            .parse(value);
+    } catch (err) {
+        program.error(`failed to parse radius: expected a number in range 1-1 000 000; got: ${value}`);
+    }
+}
+
 function parseIntGreaterThan0(value: string): number {
     try {
         return z.coerce.number().int().min(1)
@@ -56,19 +65,20 @@ function arrayToCopiedWithonEntry<T extends unknown>(arr: T[], entry: T): T[] {
 }
 
 const generalOpts: GeneralOptions = program
-    .name("wplace_archiverr")
+    .name("wplace_archiver")
     .description("Archiver utility for https://wplace.live")
     .option("-o, --out <dirpath>", "Output directory path. By default, is 'archives'. See each mode for how they format their outputs.", "archives")
     .option("--rps, --requests-per-second <number>", "Requests per second. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", parseIntGreaterThan0)
-    .option("--rpp, --requests-per-minute <number>", "Requests per minute. Alternative to --rps option. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", parseIntGreaterThan0, 120)
+    .option("--rpm, --requests-per-minute <number>", "Requests per minute. Alternative to --rps option. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", parseIntGreaterThan0, 120)
     .option("--rc, --request-concurrency <number>", "Request concurrency. How many requests are allowed to run in parallel? Higher value could cause Too Many Requests errors, significantly lowering RPS.", parseIntGreaterThan0, 1)
     .option("-l, --loop", "Run archiving continuously? Once archival is complete, it will run again. Saving path may be altered - see each mode for details.", false)
     .opts();
 
 const regionSubcommands = ["size", "to", "radius"];
 program.command("region")
+    .description("Captures a region of tiles.")
     .argument("<tile X,Y>", "Position of the starting tile formatted as X,Y. Each value must be from 0 to 2047.", parsePositionOption)
-    .option("--out2 <dirpath>", "Output directory path. Appended to general variant of --out like this: '<general dirpath>/region/<this dirpath>'. By default, is 'region-X<tile_x>-Y<tile_y>-W<width_tiles>-H<height_tiles>/<date>+<duration>' (excluding brackets), where X and Y are positions of the upper left corner of a region, W and H are dimensions of that region, 'date' is a iso-like timestamp of when the archival begun and 'duration' is a duration that archival took (added afterwards). If specifying path that has any of previously mentioned variables (as plain text, no brackets), they will be replaced with actual values'", 'region-Xtile_x-Ytile_y-Wwidth_tiles-Hheight_tiles/date+duration')
+    .option("--out2 <dirpath>", "Output directory path. Appended to general variant of --out like this: '<general dirpath>/<this dirpath>'. By default, is (see the default value), excluding brackets, where X and Y are positions of the upper left corner of a region, W and H are dimensions of that region, 'date' is a iso-like timestamp of when the archival begun and 'duration' is a duration that archival took (added afterwards). If specifying path that has any of previously mentioned variables (as plain text, no brackets), they will be replaced with actual values'", 'regions/region-Xtile_x-Ytile_y-Wwidth_tiles-Hheight_tiles/date+duration')
     .addOption(new Option("--size <W,H>", "Size in tiles formatted as W,H, where W is width and H is height. This will extend the region horizontally right and vertically down. Each value must be from 1 to 2048.")
         .conflicts(arrayToCopiedWithonEntry(regionSubcommands, "size"))
         .argParser(parseSizeOption)
@@ -148,5 +158,13 @@ program.command("region")
 
         saveRegion({ region, out: opts.out2 }, generalOpts);
     });
+
+// program.command("grabby", "Grabs tiles around the starting tile until no tiles without pixels above threshold are left.")
+//     .argument("<tile X,Y>", "Position of the starting tile formatted as X,Y. Each value must be from 0 to 2047.", parsePositionOption)
+//     .option("-t, --threshold <value>", "Minimum amount of pixels in a tile to pass. Value from 1 to 1 000 000", parseTilePixelCount, 1)
+//     .action((xy, opts) => {
+
+
+//     });
 
 program.parse();
