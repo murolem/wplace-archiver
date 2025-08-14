@@ -1,20 +1,22 @@
+import z from 'zod';
+import { Vector2 } from '$lib/vector';
 import { mapDimensionsInTiles } from '$src/constants';
 
-export class TilePosition {
-    get x() { return this._x; }
-    set x(value) { this._x = this.constrainTilePositionComponent(value); }
-    private _x;
+const tilePosComponentSchema = z.number().int().min(0).max(2047);
 
-    get y() { return this._y; }
-    set y(value) { this._y = this.constrainTilePositionComponent(value); }
-    private _y;
+export class TilePosition extends Vector2 {
+    isValidTilePosition(): boolean {
+        if (tilePosComponentSchema.safeParse(this.x).success
+            && tilePosComponentSchema.safeParse(this.y).success)
+            return true;
+        else
+            return false;
+    }
 
-    /** Creates a new tile position. 
-     * 
-     * If given position is outside the map bounds, it will be constrained to the map bounds retaining the same map position. */
-    constructor(x: number, y: number) {
-        this._x = this.constrainTilePositionComponent(x);
-        this._y = this.constrainTilePositionComponent(y);
+    ensureWithinMap(): this {
+        this.x = this._wrapComponentToMap(this.x);
+        this.y = this._wrapComponentToMap(this.y);
+        return this;
     }
 
     static fromString(str: string): TilePosition {
@@ -24,19 +26,15 @@ export class TilePosition {
             throw new Error(`failed to create tile position from string: expected 2 parts, found ${parts.length}: (see above)`);
         }
 
-        return new TilePosition(...parts as [number, number]);
+        return new TilePosition(...parts as [number, number])
+            .ensureWithinMap();
     }
 
     toString() {
         return this.x + "," + this.y;
     }
 
-    isEqual(other: TilePosition) {
-        return this.x === other.x && this.y === other.y;
-    }
-
-
-    constrainTilePositionComponent(comp: number): number {
+    private _wrapComponentToMap(comp: number): number {
         if (comp < 0) {
             return mapDimensionsInTiles + (comp % mapDimensionsInTiles);
         } else if (comp > mapDimensionsInTiles) {

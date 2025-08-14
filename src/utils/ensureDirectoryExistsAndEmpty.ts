@@ -1,7 +1,7 @@
 import { isPathWithinDirectoryOrNested } from './isPathWithinDirectoryOrNested';
 import fs from 'fs-extra';
 import path from 'path';
-import { Logger } from '$logger';
+import { Logger } from '$utils/logger';
 
 const logger = new Logger("utils/ensureDirectoryExistsEmpty");
 const { logDebug, logInfo, logWarn, logFatal } = logger;

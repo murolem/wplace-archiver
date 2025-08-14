@@ -1,5 +1,5 @@
 import { getErrorWriter, getTileWriter } from '$lib/writers'
-import { Logger } from '$logger';
+import { Logger } from '$utils/logger';
 import { wait } from '$utils/wait';
 import humanizeDuration from 'humanize-duration';
 import fs from 'fs-extra';
@@ -57,9 +57,12 @@ export class Cycler {
             if (this._cycleStartDelayMs === 0) {
                 logInfo(`starting archival cycle`);
             } else {
-                logInfo(`starting archival cycle in ${humanizeDuration(clamp(this._cycleStartDelayMs, 1000, Infinity))}`);
+                const startDelaySecondsInt = clamp(Math.ceil(this._cycleStartDelayMs / 1000), 1, Infinity);
+                for (let i = startDelaySecondsInt; i > 0; i--) {
+                    logInfo(`starting archival cycle in ${humanizeDuration(i * 1000)}`);
+                    await wait(1000);
+                }
             }
-            await wait(this._cycleStartDelayMs);
 
             /** Initial resulting dirpath. Will be renamed after all is done to specify the elapsed duration. */
             let outDirpathRelToWorkDir = this._cycleDirnamePreFormatter(timeStart);
@@ -103,10 +106,11 @@ export class Cycler {
             else
                 fs.renameSync(oldErrorsDirpath, errorsDirpath);
 
+            const elapsedFmted = humanizeDuration(elapsedMs, { round: true });
             if (loop) {
-                logInfo(chalk.bold(`✅ archival cycle complete! :3 pending restart to a new cycle`));
+                logInfo(chalk.bold(`✅ archival cycle completed in ${elapsedFmted}! :3 pending restart to a new cycle`));
             } else {
-                logInfo(chalk.bold(`✅ archival cycle complete! :3`));
+                logInfo(chalk.bold(`✅ archival cycle completed in ${elapsedFmted}! :3`));
                 break;
             }
         }

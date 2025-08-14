@@ -1,4 +1,4 @@
-import { Logger } from '$logger'
+import { Logger } from '$utils/logger'
 import type { GeneralOptions, Position, RegionOpts, Size } from '$src/types'
 import { clamp } from '$utils/clamp'
 import { convertIndexToXyPosition } from '$utils/converters'
@@ -24,9 +24,11 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptio
 
     // =======
 
-    const rps = generalOpts.requestsPerSecond
-        ?? generalOpts.requestsPerMinute / 60
-    const tileQueue = new TileFetchQueue({ requestsPerSecond: rps, requestConcurrency: generalOpts.requestConcurrency });
+    const tileQueue = new TileFetchQueue({
+        requestsPerSecond: generalOpts.requestsPerSecond,
+        requestConcurrency: generalOpts.requestConcurrency,
+        respectTooManyRequestsDelay: generalOpts.respectTooManyRequestsDelay
+    });
 
     const region = modeOpts.region;
     const regionSize: Size = {
@@ -35,7 +37,7 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptio
     }
     const tilesTotal = regionSize.w * regionSize.h;
 
-    const projectedDurationSeconds = clamp(Math.floor(tilesTotal / rps), 1, Infinity);
+    const projectedDurationSeconds = clamp(Math.floor(tilesTotal / generalOpts.requestsPerSecond), 1, Infinity);
 
     logInfo(`archival of region X1 ${chalk.bold(region.xy1.x)} Y1 ${chalk.bold(region.xy1.y)} X2 ${chalk.bold(region.xy2.x)} Y2 ${chalk.bold(region.xy2.y)} (width ${chalk.bold(regionSize.w)} height ${chalk.bold(regionSize.h)}), totalling ${chalk.bold(humanizeNumber(tilesTotal) + " tiles")}. projected duration: ${chalk.bold(humanizeDuration(projectedDurationSeconds * 1000, { conjunction: " and " }))}`);
     if (projectedDurationSeconds > projectDurationLongTimeWarningSeconds) {

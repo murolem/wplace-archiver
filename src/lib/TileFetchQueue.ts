@@ -2,13 +2,12 @@ import { getTileLogPrefix } from '$lib/logging';
 import { getExpDelayCalculator, tryGetResponseBodyAsText } from '$lib/network';
 import { stringifyErr } from '$lib/result';
 import { stringify } from '$lib/stringify';
-import { Logger } from '$logger';
-import { mapDimensionsInTilesStrLength } from '$src/constants';
+import { Logger } from '$utils/logger';
+import { maxRetryAfterMs } from '$src/constants';
 import type { Position, TileImage } from '$src/types';
-import { roundToDigit } from '$utils/roundToDigit';
 import { wait } from '$utils/wait';
 import chalk from 'chalk';
-import { err, ok, type Err, type Ok, type Result, type ResultAsync } from 'neverthrow';
+import { err, ok, type Result } from 'neverthrow';
 import PQueue from 'p-queue';
 
 /** Formatting option for percentage progress for logging. */
@@ -48,24 +47,47 @@ export class TileFetchQueue {
     private _targetQueueSize: number;
     private _getRetryDelay: ReturnType<typeof getExpDelayCalculator>;
     private _timeoutMs: number;
+    private _respectTooManyRequestsDelay: boolean;
 
     constructor(args: {
         requestsPerSecond: number,
         requestConcurrency: number,
+        respectTooManyRequestsDelay: boolean,
         targetQueueSize?: number
     }) {
         args.targetQueueSize ??= 5;
+        args.respectTooManyRequestsDelay ??= false;
 
         this._queue = new PQueue({ concurrency: args.requestConcurrency, interval: 1000 /** do not change */, intervalCap: args.requestsPerSecond });
         this._targetQueueSize = args.targetQueueSize;
 
-        const maxRetryDelayMs = 2 * 60 * 1000; // 2 minutes
+
+        const maxRetryDelayMs = 4 * 1000;
         this._getRetryDelay = getExpDelayCalculator({
             factor: 2,
             maxDelayMs: maxRetryDelayMs,
             startingDelayMs: 100
         });
-        this._timeoutMs = maxRetryDelayMs + 5 * 1000; // +just an arbitrary small amount to not interrupt retries on max delay 
+
+        this._timeoutMs = args.respectTooManyRequestsDelay
+            // if respected, the queue will be paused and requests will abort while queue is paused
+            ? maxRetryAfterMs + 2 * 1000
+            // otherwise we could do with retry delay
+            : maxRetryDelayMs + 2 * 1000;
+
+        this._respectTooManyRequestsDelay = args.respectTooManyRequestsDelay;
+    }
+
+    get isPaused(): boolean {
+        return this._queue.isPaused;
+    }
+
+    pause() {
+        this._queue.pause();
+    }
+
+    start() {
+        this._queue.start();
     }
 
     /**
@@ -138,7 +160,10 @@ export class TileFetchQueue {
 
             logInfo(chalk.gray(`fetching: ` + url));
             const abortCtrl = new AbortController();
-            setTimeout(() => abortCtrl.abort("timeout"), this._timeoutMs);
+            const abortHandle = setTimeout(() => {
+                abortCtrl.abort("timeout");
+                logError("request aborted (timeout)")
+            }, this._timeoutMs);
             const responseRes = await fetch(url, {
                 "headers": {
                     "Accept": "image/webp,*/*",
@@ -151,6 +176,7 @@ export class TileFetchQueue {
                     return err({ type: 'fetch-failed', url, error });
                 });
 
+            clearTimeout(abortHandle);
             if (responseRes.isErr()) {
                 logError(`error while fetching; retrying in ${retryDelayMs}ms`);
                 writeError(stringifyErr(responseRes));
@@ -168,16 +194,30 @@ export class TileFetchQueue {
                         stringify({ url, status: res.status, statusText: res.statusText })
                     );
 
-                    const retryAfterHeader = res.headers.get('Retry-After');
-                    if (retryAfterHeader === null) {
-                        logError(`too many requests. maybe decrease the RPS? retrying in ${retryDelayMs}ms`);
-                        return err({ type: 'retryable' });
-                    } else {
-                        const pauseDurationMs = parseInt(retryAfterHeader) * 1000;
-                        logWarn(`too many requests; pausing for ${pauseDurationMs}ms (set by Retry-After header) before retrying. consider decreasing RPS.`);
-                        await this._tryPauseQueueForMs(pauseDurationMs);
+                    if (this.isPaused) {
+                        logWarn(`too many requests. already paused, waiting for unpause to continue.`);
                         return err({ type: 'retryable', retryDelayMsOverride: 0 });
                     }
+
+                    const retryAfterHeader = res.headers.get('Retry-After');
+
+                    let pauseDurationMs: number = 0;
+                    if (this._respectTooManyRequestsDelay) {
+                        if (retryAfterHeader) {
+                            logWarn(`too many requests; pausing queue for ${pauseDurationMs}ms (set by Retry-After header) before retrying. consider decreasing RPS/concurrency.`);
+                            pauseDurationMs = parseInt(retryAfterHeader) * 1000;
+                        } else {
+                            logWarn(`too many requests; pausing queue for ${pauseDurationMs}ms before retrying. consider decreasing RPS/concurrency.`);
+                            pauseDurationMs = retryDelayMs;
+                        }
+                    } else {
+                        logWarn(`too many requests`);
+                    }
+
+                    if (pauseDurationMs > 0)
+                        await this._tryPauseQueueForMs(pauseDurationMs);
+
+                    return err({ type: 'retryable', retryDelayMsOverride: 0 });
                 } else if (resStatusStr.startsWith('4')) {
                     logError("client error. cancelling download for this tile.");
                     writeError(

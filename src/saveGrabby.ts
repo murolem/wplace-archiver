@@ -1,42 +1,44 @@
-import { Logger } from '$logger'
+import { Logger } from '$utils/logger'
 import type { GeneralOptions, GrabbyOpts, Position, TileImage } from '$src/types'
 import chalk from 'chalk'
-import { formatDateToFsSafeIsolike, formatMsToDurationDirnamePart } from '$src/lib/formatters'
+import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart } from '$src/lib/formatters'
 import { TileFetchQueue } from '$lib/TileFetchQueue'
 import { Cycler } from '$lib/Cycler'
 import { wait } from '$utils/wait'
 import sharp from 'sharp'
 import { getTileLogPrefix } from '$lib/logging'
 import { TilePosition } from '$lib/TilePosition'
-import { convertIndexToXyPosition } from '$utils/converters'
+import { err, ok, type Result } from 'neverthrow'
+import PQueue from 'p-queue'
+import { SigintConfirm } from '$utils/sigintConfirm'
 const modeLogger = new Logger("mode-region");
 const { logInfo, logError, logWarn } = modeLogger;
 
 export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptions) {
-    const rps = generalOpts.requestsPerSecond
-        ?? generalOpts.requestsPerMinute / 60
-    const tileQueue = new TileFetchQueue({ requestsPerSecond: rps, requestConcurrency: generalOpts.requestConcurrency });
+    const tileQueue = new TileFetchQueue({
+        requestsPerSecond: generalOpts.requestsPerSecond,
+        requestConcurrency: generalOpts.requestConcurrency,
+        respectTooManyRequestsDelay: generalOpts.respectTooManyRequestsDelay
+    });
+    const processingQueue = new PQueue({ concurrency: generalOpts.requestConcurrency, interval: 1000 /** do not change */, intervalCap: generalOpts.requestsPerSecond });
 
     logInfo(chalk.gray("generating discovery offsets"));
     /** Position offsets for tile discovery. */
     const tileDiscoveryOffsets: Position[] = [];
-    const diameter = modeOpts.radius * 2 + 1;
-    for (let i = 0; i < diameter ** 2; i++) {
-        // unsigned offset
-        const offset = convertIndexToXyPosition(i, diameter);
-        // turn signed
-        offset.x -= modeOpts.radius;
-        offset.y -= modeOpts.radius;
+    for (let x = -Math.floor(modeOpts.tileTolerance); x <= Math.ceil(modeOpts.tileTolerance); x++) {
+        for (let y = -Math.floor(modeOpts.tileTolerance); y <= Math.ceil(modeOpts.tileTolerance); y++) {
+            const offset = new TilePosition(x, y);
+            // skip offset pointing at self
+            if (offset.x === 0 && offset.y === 0)
+                continue;
+            else if (offset.length() > modeOpts.tileTolerance)
+                continue;
 
-        // skip offset pointing at self
-        if (offset.x === 0 && offset.y === 0)
-            continue;
-
-        tileDiscoveryOffsets.push(offset);
+            tileDiscoveryOffsets.push(offset);
+        }
     }
 
-    logInfo(`grabby archival with ${chalk.bold(modeOpts.radius + ' offset')} above ${chalk.bold(modeOpts.threshold + ' pixel threshold')} (${tileDiscoveryOffsets.length} discovery ring size, in tiles); starting at tile X1 ${chalk.bold(modeOpts.startingTile.x)} Y1 ${chalk.bold(modeOpts.startingTile.y)}`)
-    logInfo(tileDiscoveryOffsets.map(e => `(${e.x}, ${e.y})`).join(" "));
+    logInfo(`grabby archival at ${chalk.bold("X" + modeOpts.startingTile.x)} ${chalk.bold("Y" + modeOpts.startingTile.y)} with ${chalk.bold(modeOpts.radius + ' tile radius')} above ${chalk.bold(modeOpts.tileTolerance + ' tile tolerance threshold')} (${tileDiscoveryOffsets.length} offsets per tile). ${chalk.bold("pixel threshold")} is set to ${chalk.bold(modeOpts.pixelThreshold + " pixels")}.`)
 
     const cycler = new Cycler({
         workingDir: generalOpts.out,
@@ -81,9 +83,14 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
                     && !tilePosPool.has(posStr);
             }
 
-            const getNextPoolPos = () => {
+            const isTilePosWithinBounds = (pos: TilePosition): boolean => {
+                // why do I have to make this assertion typescript??? dumbass
+                return (modeOpts.startingTile as TilePosition).distance(pos) <= modeOpts.radius;
+            }
+
+            const tryGetNextPoolPos = (): TilePosition | null => {
                 if (tilePosPoolLength === 0)
-                    throw new Error("failed to get a next pool position: pool is empty");
+                    return null;
 
                 const posStr = tilePosPool.values().next().value!;
                 tilePosPool.delete(posStr);
@@ -92,13 +99,49 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
                 return TilePosition.fromString(posStr);
             }
 
-            const tryAddTilePosToPool = (pos: TilePosition): void => {
-                if (!isNewTilePos(pos)) {
-                    return;
+            const tryAddTilePosToPool = (pos: TilePosition): Result<
+                void,
+                { reason: 'outside-radius' }
+                | { reason: 'already-pooled' }
+            > => {
+                if (!isTilePosWithinBounds(pos))
+                    return err({ reason: 'outside-radius' })
+                else if (!isNewTilePos(pos)) {
+                    return err({ reason: 'already-pooled' });
                 }
 
                 tilePosPool.add(pos.toString());
                 tilePosPoolLength++;
+
+                return ok();
+            }
+
+            const tryAddTilePositionsToPool = (positions: TilePosition[]): {
+                total: number,
+                success: number,
+                outsideRadius: number,
+                alreadyPooled: number
+            } => {
+                return positions.reduce((accum, value) => {
+                    const res = tryAddTilePosToPool(value);
+                    if (res.isOk()) {
+                        accum.success++;
+                        return accum;
+                    }
+
+                    switch (res.error.reason) {
+                        case 'already-pooled': accum.alreadyPooled++; break;
+                        case 'outside-radius': accum.outsideRadius++; break;
+                        default: throw new Error("not impl");
+                    }
+
+                    return accum;
+                }, {
+                    total: positions.length,
+                    success: 0,
+                    outsideRadius: 0,
+                    alreadyPooled: 0
+                });
             }
 
             const markTilePosInProgress = (tilePos: TilePosition): void => {
@@ -114,19 +157,18 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
 
             tryAddTilePosToPool(new TilePosition(modeOpts.startingTile.x, modeOpts.startingTile.y));
 
-            while (tilePosPoolLength > 0 || tilePosPoolInProgressLen > 0) {
-                if (tilePosPoolLength === 0) {
-                    await wait(100);
-                    continue;
-                }
+            const task = async () => {
+                const tilePos = tryGetNextPoolPos();
+                if (tilePos === null)
+                    return;
 
-                const tilePos = getNextPoolPos();
                 markTilePosInProgress(tilePos);
+                const tilePosOffset = tilePos.clone().subtract(modeOpts.startingTile);
 
                 const logger = new Logger(getTileLogPrefix(tilePos));
                 const { logInfo, logError, logWarn } = logger;
 
-                logInfo(`processing pool: ${tilePosPoolLength} pending start, ${tilePosPoolInProgressLen} in progress`);
+                logInfo(`processing offset ${chalk.bold("X" + tilePosOffset.x)} ${chalk.bold("Y" + tilePosOffset.y)}`);
 
                 const tileRes = await tileQueue.enqueue(
                     tilePos,
@@ -135,37 +177,67 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
 
                 if (tileRes.isErr()) {
                     markTilePosComplete(tilePos);
-                    continue;
+                    return;
                 }
 
                 const tileImage = tileRes.value;
                 await writeTile(tilePos, tileImage);
                 tilesSaved++;
 
-                if (!await hasAtLeastNPixels(tileImage, modeOpts.threshold)) {
-                    logInfo(chalk.gray("tile below the threshold"));
+                const pixelCount = await countPixels(tileImage);
+                if (pixelCount < modeOpts.pixelThreshold) {
+                    logInfo(chalk.gray(`tile below the threshold (${pixelCount} < ${modeOpts.pixelThreshold}), skipping`));
                     markTilePosComplete(tilePos);
-                    continue;
+                    return;
                 }
 
-                logInfo("threshold passed, scheduling discovery for nearby tiles");
-                for (const offset of tileDiscoveryOffsets) {
-                    tryAddTilePosToPool(
-                        new TilePosition(
-                            tilePos.x + offset.x,
-                            tilePos.y + offset.y,
-                        )
-                    )
-                }
+                logInfo(chalk.gray(`pixel threshold assed (${applyNumberUnitSuffix(pixelCount)} > ${modeOpts.pixelThreshold}), scheduling discovery for nearby tiles`));
+                const scheduledRes = tryAddTilePositionsToPool(
+                    tileDiscoveryOffsets.map(offset => new TilePosition(
+                        tilePos.x + offset.x,
+                        tilePos.y + offset.y,
+                    ))
+                );
+                logInfo(chalk.gray(`pixel threshold passed (${applyNumberUnitSuffix(pixelCount)} > ${modeOpts.pixelThreshold}); scheduled ${scheduledRes.success}/${scheduledRes.total}/${scheduledRes.alreadyPooled}/${scheduledRes.outsideRadius} (scheduled/total/already pooled/outside radius)\npool: ${tilePosPoolLength}/${tilePosPoolInProgressLen}/${tilesSaved}/${tilePosPoolCompleteLen} (scheduled/in progress/complete saved/complete total)`));
 
                 markTilePosComplete(tilePos);
             }
 
-            logInfo(`✅ grabby expansion complete: ${chalk.bold('saved ' + tilesSaved)} tiles out of ${chalk.bold(tilePosPoolCompleteLen + ' processed')}`);
+            const sigintConfirm = new SigintConfirm();
+            while (tilePosPoolLength > 0 || tilePosPoolInProgressLen > 0) {
+                if (sigintConfirm.inSigintMode) {
+                    tileQueue.pause();
+                    processingQueue.pause();
+                    await sigintConfirm.sigintPromise;
+                    tileQueue.start();
+                    processingQueue.start();
+                }
+
+                // do not schedule on pause, otherwise it would fill up the processing queue.
+                if (tileQueue.isPaused) {
+                    await wait(200);
+                    continue;
+                }
+
+                // prevents constant useless scheduling
+                await wait(1000 / generalOpts.requestConcurrency);
+
+                await processingQueue.onSizeLessThan(generalOpts.requestConcurrency);
+
+                processingQueue.add(task);
+            }
+
+            await processingQueue.onIdle();
+
+            logInfo(`✅ grabby archival complete: saved ${chalk.bold(tilesSaved + " tiles")} out of ${chalk.bold(tilePosPoolCompleteLen + ' processed')}`);
+            logInfo(`========================================`);
         }
     });
 
     await cycler.start(generalOpts.loop);
+
+    // hard exit because of some dangling promise, somewhere...
+    process.exit();
 }
 
 async function hasAtLeastNPixels(tileImage: TileImage, pixels: number): Promise<boolean> {
@@ -176,8 +248,10 @@ async function hasAtLeastNPixels(tileImage: TileImage, pixels: number): Promise<
 
     let nonEmptyPixelCount = 0;
     for (let i = 0; i < view.length; i += 4) {
-        const [r, g, b] = view.slice(i, i + 3);
-        if (r > 0 || g > 0 || b > 0)
+        // const [r, g, b, a] = view.slice(i, i + 3);
+
+        // check alpha
+        if (view[i + 4] > 0)
             nonEmptyPixelCount++;
 
         if (nonEmptyPixelCount >= pixels)
@@ -195,8 +269,11 @@ async function countPixels(tileImage: TileImage): Promise<number> {
 
     let nonEmptyPixelCount = 0;
     for (let i = 0; i < view.length; i += 4) {
-        const [r, g, b] = view.slice(i, i + 3);
-        if (r > 0 || g > 0 || b > 0)
+        // const [r, g, b] = view.slice(i, i + 3);
+        // if (r > 0 || g > 0 || b > 0)
+
+        // check alpha
+        if (view[i + 4] > 0)
             nonEmptyPixelCount++;
     }
 

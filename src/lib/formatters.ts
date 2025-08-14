@@ -16,3 +16,13 @@ export function formatMsToDurationDirnamePart(ms: number): string {
 export function formatDateToFsSafeIsolike(date: Date): string {
     return date.toISOString().replaceAll(":", "-");
 }
+
+/**
+ * Adds a unit suffix to number, eg 2500 > 2.5K.
+ */
+export function applyNumberUnitSuffix(num: number, maximumFractionDigits: number = 1): string {
+    return Intl.NumberFormat('en-US', {
+        notation: "compact",
+        maximumFractionDigits: maximumFractionDigits
+    }).format(num);
+}

@@ -5,7 +5,8 @@ export const logLevels = {
     "INFO": 1,
     "WARN": 2,
     "ERROR": 3,
-    "FATAL": 4
+    "FATAL": 4,
+    "SIGINT": 5
 }
 
 const logLevelToColorFn: Record<LogLevel, (msg: Message) => Message> = {
@@ -14,6 +15,7 @@ const logLevelToColorFn: Record<LogLevel, (msg: Message) => Message> = {
     WARN: msg => chalk.yellow(msg),
     ERROR: msg => chalk.red(msg),
     FATAL: msg => chalk.bgRed(msg),
+    SIGINT: msg => chalk.bgMagenta(msg),
 }
 
 export type LogLevel = keyof typeof logLevels;
@@ -58,6 +60,11 @@ export class Logger {
     static setLogLevel(level: LogLevel): void {
         logLevel = level;
         logLevelNum = logLevels[logLevel];
+    }
+
+    /** Get current log level. */
+    static getLogLevel(): LogLevel {
+        return logLevel;
     }
 
     /** Set instance log prefix. */

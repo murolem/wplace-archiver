@@ -6,8 +6,9 @@ export type RegionOpts = {
 }
 
 export type GrabbyOpts = {
-    startingTile: Position,
-    threshold: number,
+    startingTile: TilePosition,
+    pixelThreshold: number,
+    tileTolerance: number,
     radius: number,
     out: string
 }
@@ -15,9 +16,9 @@ export type GrabbyOpts = {
 export type GeneralOptions = {
     out: string,
     loop: boolean,
-    requestsPerSecond?: number,
-    requestsPerMinute: number,
-    requestConcurrency: number
+    requestsPerSecond: number,
+    requestConcurrency: number,
+    respectTooManyRequestsDelay: boolean
 }
 
 export type TileImage = ArrayBuffer;
