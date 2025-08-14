@@ -22,6 +22,8 @@ where:
 
 See [Modes](#Modes) for the list of available modes.
 
+The script operates on **tiles**. A tile is a 1000x1000px image that holds pixels of a part of a map. Entire map is 2048x2048 tiles.
+
 For help, run:
 
 ```bash
@@ -29,6 +31,18 @@ For help, run:
 ```
 
 ## Modes
+
+### Grabby
+
+Code: `grabby`
+
+Grabs tiles around specified tile until there are no more tiles to grab. Best mode for archiving places, since it works on any configuration of tiles and doesn't get onto empty tiles much (only within the set tolerance). Tiles are filtered by a pixel threshold and a grab radius (aka the tolerance).
+
+```bash
+./wplace_archiver grabby tile_x,tile_y [--threshold <value>] [--radius <value>]
+```
+
+For example, to archive the entirety of Moscow: `npm start -- region 1238,639`
 
 ### Region
 
@@ -39,7 +53,7 @@ Allows to save a rectangular region of the map.
 -   To save a region with upper left corner at `tile_x` and `tile_y` and width `width_tiles` and height `height_tiles`, run:
 
 ```bash
-./wplace_archiver region tile_x,tile_y --size width_tiles,height_tiles
+./wplace_archiver region tile_x,tile_y --size width_tiles,height_tiles [--center]
 ```
 
 Example: `./wplace_archiver region 570,710 --size 50,50`
@@ -70,15 +84,31 @@ To make the initial position a center of a region instead of the upper left corn
 
 Example: `./wplace_archiver region 594,733 --size 20,40 --center`
 
-### Entire map (currently off)
+## Continuous archival
 
-### UPDATE: wplace introduced an RPS limit so archiving at the good speed is now impossible. At the moment of writing this, the limit is about 8-10 RPS, which equals to about 120 hours of archiving compared to previous 2 hours at 500 RPS. RIP.
+Allows to run the archival continuously. Once once archival "cycle" is done, next starts, saving tiles to a new folder.
 
-Saves all map tiles to a folder in parallel. Saving is done continuously, so once one archival is complete next begins.
+Can be enabled by passing `--loop`.
 
-Empty tiles do not exists on the server, so they are not saved. The entire map is 2048 by 2048 tiles in total.
+Example: `npm start -- grabby 1792,708 --loop`.
 
-Any errors should get retried, so that no tiles are lost. A special archival errors folder is created if any errors are encountered, containing saved errors - one in each file corresponding to a specific tile.
+## Rate limiting
+
+The server often changes limits on amount of requests per second, so it could be taken advantage of by utilizing the requests per second option `--rps` and concurrent requests option `--rc`. See help for more details.
+
+Example of 2 requests per second:
+
+```bash
+./wplace_archiver [mode] --rps 2
+```
+
+Or same, but in requests per minute:
+
+```bash
+./wplace_archiver [mode] --rpm 120
+```
+
+The defaults should work as-is, though to get archiving done faster you might wan't to fine tune these. If you go too high, you'll start to get a lot of errors. The faster the errors show up the more it needs to be tuned down.
 
 ## Developing
 

@@ -1,3 +1,4 @@
+import { saveGrabby } from '$src/saveGrabby';
 import { saveRegion, type Region } from '$src/saveRegion';
 import type { GeneralOptions, Position, Size } from '$src/types';
 import { Option, program } from '@commander-js/extra-typings';
@@ -25,12 +26,14 @@ function parseSizeOption(value: string): Size {
     }
 }
 
-function parseRadiusOption(value: string): number {
-    try {
-        return z.coerce.number().int().min(1).max(1024)
-            .parse(value);
-    } catch (err) {
-        program.error(`failed to parse radius: expected a number in range 0-1024; got: ${value}`);
+function getRadiusOptionParser(maxRadius: number): (value: string) => number {
+    return (value: string): number => {
+        try {
+            return z.coerce.number().int().min(1).max(maxRadius)
+                .parse(value);
+        } catch (err) {
+            program.error(`failed to parse radius: expected a number in range 0-${maxRadius}; got: ${value}`);
+        }
     }
 }
 
@@ -43,14 +46,18 @@ function parseTilePixelCount(value: string): number {
     }
 }
 
-function parseIntGreaterThan0(value: string): number {
-    try {
-        return z.coerce.number().int().min(1)
-            .parse(value);
-    } catch (err) {
-        program.error(`failed to parse the value: expected an integer greater than or equal to 1; got: ${value}`);
+function getIntRangeParser(from: number, to: number): (value: string) => number {
+    return (value: string) => {
+        try {
+            return z.coerce.number().int().min(from).max(to)
+                .parse(value);
+        } catch (err) {
+            program.error(`failed to parse the value: expected an integer in range ${from}-${to}; got: ${value}`);
+        }
     }
 }
+
+const parseIntGreaterThan0 = getIntRangeParser(1, Infinity);
 
 /**
  * Copies an array, removing specific entry from the copy and returning the copy array.
@@ -69,8 +76,8 @@ const generalOpts: GeneralOptions = program
     .description("Archiver utility for https://wplace.live")
     .option("-o, --out <dirpath>", "Output directory path. By default, is 'archives'. See each mode for how they format their outputs.", "archives")
     .option("--rps, --requests-per-second <number>", "Requests per second. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", parseIntGreaterThan0)
-    .option("--rpm, --requests-per-minute <number>", "Requests per minute. Alternative to --rps option. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", parseIntGreaterThan0, 120)
-    .option("--rc, --request-concurrency <number>", "Request concurrency. How many requests are allowed to run in parallel? Higher value could cause Too Many Requests errors, significantly lowering RPS.", parseIntGreaterThan0, 1)
+    .option("--rpm, --requests-per-minute <number>", "Requests per minute. Alternative to --rps option. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", getIntRangeParser(60, Infinity), 120)
+    .option("--rc, --request-concurrency <number>", "Request concurrency. How many requests are allowed to run in parallel? Higher value could cause Too Many Requests errors, significantly lowering RPS.", parseIntGreaterThan0, 2)
     .option("-l, --loop", "Run archiving continuously? Once archival is complete, it will run again. Saving path may be altered - see each mode for details.", false)
     .opts();
 
@@ -85,7 +92,7 @@ program.command("region")
     )
     .addOption(new Option("--radius <R>", "Size in tiles both vertically and horizontally. Sets '--center'. Each value must be from 1 to 1024.")
         .conflicts(arrayToCopiedWithonEntry(regionSubcommands, "radius"))
-        .argParser(parseRadiusOption)
+        .argParser(getRadiusOptionParser(1024))
     )
     .addOption(new Option("--to <X,Y>", "Position of the ending tile formatted as X,Y, where W is width and H is height. Each value must be from 0 to 2047.")
         .conflicts(arrayToCopiedWithonEntry(regionSubcommands, "to"))
@@ -159,12 +166,14 @@ program.command("region")
         saveRegion({ region, out: opts.out2 }, generalOpts);
     });
 
-// program.command("grabby", "Grabs tiles around the starting tile until no tiles without pixels above threshold are left.")
-//     .argument("<tile X,Y>", "Position of the starting tile formatted as X,Y. Each value must be from 0 to 2047.", parsePositionOption)
-//     .option("-t, --threshold <value>", "Minimum amount of pixels in a tile to pass. Value from 1 to 1 000 000", parseTilePixelCount, 1)
-//     .action((xy, opts) => {
-
-
-//     });
+program.command("grabby")
+    .description("Grabs tiles around starting tile until no tiles without pixels above threshold are left.")
+    .argument("<tile X,Y>", "Position of starting tile formatted as X,Y. Each value must be from 0 to 2047.", parsePositionOption)
+    .option("--out2 <dirpath>", "Output directory path. Appended to general variant of --out like this: '<general dirpath>/<this dirpath>'. By default, is (see the default value), excluding brackets, where X and Y is starting tile position, 'date' is a iso-like timestamp of when the archival begun and 'duration' is a duration that archival took (added afterwards). If specifying path that has any of previously mentioned variables (as plain text, no brackets), they will be replaced with actual values'", 'grabs/Xtile_x-Ytile_y/date+duration')
+    .option("-t, --threshold <value>", "Minimum amount of pixels in a tile for saving. Value from 1 to 1 000 000", parseTilePixelCount, 10)
+    .option("-r, --radius <value>", "How far to reach when scanning nearby tiles? Counted in \"rings\" around a tile, forming a square. Value from 1 to 64", getRadiusOptionParser(64), 1)
+    .action((xy, opts) => {
+        saveGrabby({ startingTile: xy, threshold: opts.threshold, radius: opts.radius, out: opts.out2 }, generalOpts);
+    });
 
 program.parse();

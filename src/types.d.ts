@@ -5,8 +5,10 @@ export type RegionOpts = {
     out: string
 }
 
-export type GrubbyOpts = {
+export type GrabbyOpts = {
+    startingTile: Position,
     threshold: number,
+    radius: number,
     out: string
 }
 

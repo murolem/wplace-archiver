@@ -1,11 +1,11 @@
 import { stringify, stringifyError } from '$lib/stringify';
 import type { Err } from 'neverthrow';
 
-export function stringifyErr(value: Err<any, any>): string {
-    const body = value.error();
+export function stringifyErr(value: Err<unknown, { error?: unknown }>): string {
+    const body = value.error;
     return stringify({
         ...body,
-        error: body.error === undefined ? undefined : stringifyError(body.error)
+        error: body.error === undefined ? undefined : stringifyError(body.error!)
     });
 }
 

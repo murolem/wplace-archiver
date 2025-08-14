@@ -5,6 +5,7 @@ import humanizeDuration from 'humanize-duration';
 import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
+import { clamp } from '$utils/clamp';
 const logger = new Logger("cycler");
 const { logInfo, logError, logWarn } = logger;
 
@@ -53,7 +54,11 @@ export class Cycler {
 
         while (true) {
             const timeStart = new Date();
-            logInfo(`starting archival cycle in ${humanizeDuration(this._cycleStartDelayMs)}`);
+            if (this._cycleStartDelayMs === 0) {
+                logInfo(`starting archival cycle`);
+            } else {
+                logInfo(`starting archival cycle in ${humanizeDuration(clamp(this._cycleStartDelayMs, 1000, Infinity))}`);
+            }
             await wait(this._cycleStartDelayMs);
 
             /** Initial resulting dirpath. Will be renamed after all is done to specify the elapsed duration. */

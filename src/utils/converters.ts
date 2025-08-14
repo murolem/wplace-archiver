@@ -1,7 +1,4 @@
-export type Position = {
-    x: number,
-    y: number
-}
+import type { Position } from '$src/types';
 
 /** Given an XY position and a width within that space, returns an index to that position.
  * 

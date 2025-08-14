@@ -1,3 +1,4 @@
+import { getTileLogPrefix } from '$lib/logging';
 import { getExpDelayCalculator, tryGetResponseBodyAsText } from '$lib/network';
 import { stringifyErr } from '$lib/result';
 import { stringify } from '$lib/stringify';
@@ -46,6 +47,7 @@ export class TileFetchQueue {
     private _queue: PQueue;
     private _targetQueueSize: number;
     private _getRetryDelay: ReturnType<typeof getExpDelayCalculator>;
+    private _timeoutMs: number;
 
     constructor(args: {
         requestsPerSecond: number,
@@ -56,15 +58,14 @@ export class TileFetchQueue {
 
         this._queue = new PQueue({ concurrency: args.requestConcurrency, interval: 1000 /** do not change */, intervalCap: args.requestsPerSecond });
         this._targetQueueSize = args.targetQueueSize;
+
+        const maxRetryDelayMs = 2 * 60 * 1000; // 2 minutes
         this._getRetryDelay = getExpDelayCalculator({
             factor: 2,
-            maxDelayMs: 5 * 60 * 1000,
+            maxDelayMs: maxRetryDelayMs,
             startingDelayMs: 100
         });
-    }
-
-    async waitForEnqueueSlot() {
-        return
+        this._timeoutMs = maxRetryDelayMs + 5 * 1000; // +just an arbitrary small amount to not interrupt retries on max delay 
     }
 
     /**
@@ -121,26 +122,13 @@ export class TileFetchQueue {
 
         const col = tilePos.x;
         const row = tilePos.y;
-        const colFmted = col.toString().padStart(mapDimensionsInTilesStrLength, '0');
-        const rowFmted = row.toString().padStart(mapDimensionsInTilesStrLength, '0');
 
         const url = `https://backend.wplace.live/files/s0/tiles/${col}/${row}.png`;
 
         const task: () => Promise<EnqueueTaskResult> = async () => {
             attemptIndex++;
 
-            const progressStrFmted: string = (() => {
-                if (progress01 === undefined)
-                    return '';
-
-                const percentage = roundToDigit(progress01 * 100, progressPercentageDigitsAfterComma).toString();
-                const parts = percentage.split(".");
-                return parts[0].padStart(2, '0')
-                    + '.'
-                    + (parts[1] ?? '').padEnd(progressPercentageDigitsAfterComma, '0')
-                    + '%';
-            })();
-            const logger = new Logger(`${progressStrFmted ? progressStrFmted + ' ' : ''}COL ${colFmted} ROW ${rowFmted}`);
+            const logger = new Logger(getTileLogPrefix(tilePos, { progress: progress01 }));
             const { logInfo, logError, logWarn } = logger;
 
             const writeError = (data: string) => writeErrorGeneral(attemptIndex, data);
@@ -149,11 +137,14 @@ export class TileFetchQueue {
             const retryDelayMs = this._getRetryDelay(attemptIndex);
 
             logInfo(chalk.gray(`fetching: ` + url));
+            const abortCtrl = new AbortController();
+            setTimeout(() => abortCtrl.abort("timeout"), this._timeoutMs);
             const responseRes = await fetch(url, {
                 "headers": {
                     "Accept": "image/webp,*/*",
                     "Accept-Language": "en-US,en;q=0.5",
                 },
+                signal: abortCtrl.signal
             })
                 .then(res => ok(res))
                 .catch(error => {
@@ -199,7 +190,7 @@ export class TileFetchQueue {
                     writeError(
                         stringify({ type: "server error", url, status: res.status, statusText: res.statusText, body: await tryGetResponseBodyAsText(res) })
                     );
-                    return err({ type: 'unrecoverable' });
+                    return err({ type: 'retryable' });
                 }
             }
 
