@@ -6,6 +6,10 @@ Currently archived: see [wplace-archives](https://github.com/murolem/wplace-arch
 
 ## Usage
 
+This is Command Line Utility, meaning it will only run through console/terminal. Just running the EXE file **will not work**.
+
+---
+
 Grab a binary from [releases](https://github.com/murolem/wplace-archiver/releases/latest). Binaries are available for linux-x64 and windows-x64 (untested).
 
 To run:
@@ -22,12 +26,26 @@ where:
 
 See [Modes](#Modes) for the list of available modes.
 
-The script operates on **tiles**. A tile is a 1000x1000px image that holds pixels of a part of a map. Entire map is 2048x2048 tiles.
+The script operates on **tiles**. A tile is a 1000x1000px image that holds pixels of a part of a map. Entire map is 2048x2048 tiles. To get your current tile position:
 
-For help, run:
+1. Open Developer tools.
+2. Go to Network tab.
+3. Press "All" or "XHR" tab.
+4. Move around.
+5. Click on any .png file that appears in the list.
+6. Click on "Headers" tab for that request.
+7. You will see a URL (or part of it) that looks something like `/files/s0/tiles/1792/708.png`. `1792/708` is a tile position of nearby tile; `1792` is X and `708` is Y.
+
+For help (to see available commands), run:
 
 ```bash
 ./wplace_archiver help
+```
+
+To see commands for a specific mode, run:
+
+```bash
+./wplace_archiver help [mode]
 ```
 
 ## Modes
@@ -36,13 +54,17 @@ For help, run:
 
 Code: `grabby`
 
-Grabs tiles around specified tile until there are no more tiles to grab. Best mode for archiving places, since it works on any configuration of tiles and doesn't get onto empty tiles much (only within the set tolerance). Tiles are filtered by a pixel threshold and a grab radius (aka the tolerance).
+Grabs tiles around starting tile until there are no more tiles to grab within a radius. The grab radius is also configurable, as well as minimum amount of pixels in a tile. Best mode for archiving places, since it works on any configuration of tiles and doesn't get onto empty tiles much.
 
 ```bash
-./wplace_archiver grabby tile_x,tile_y [--threshold <value>] [--radius <value>]
+./wplace_archiver grabby tile_x,tile_y [--radius <value>] [--pixel-threshold <amount>] [--tile-tolerance <radius>]
 ```
 
-For example, to archive the entirety of Moscow: `npm start -- region 1238,639`
+For example, to archive the entirety of Moscow, run: `npm start -- grabby 1238,639`.
+
+**Note:** if you getting **Too Many Requests** error, it is expected. The script "bruteforces" through these errors and it works anyway (to a degree) due to poor rate limiting implementation on Wplace.
+
+**Note2:** if you want to go paint while archival in progress, press Ctrl+C to pause the archival and free bandwidth to the server. This should help tiles load. Pressing Enter will resume the process. Currently works only for this mode, and not in between runs.
 
 ### Region
 
@@ -94,21 +116,11 @@ Example: `npm start -- grabby 1792,708 --loop`.
 
 ## Rate limiting
 
-The server often changes limits on amount of requests per second, so it could be taken advantage of by utilizing the requests per second option `--rps` and concurrent requests option `--rc`. See help for more details.
+The server has pretty low limits on amount of requests per second, so some tweaking might be required. At the moment of writing this, the defaults are pretty good and fine-tuned for good RPS, even going past the limit and rate limit errors (to some degree).
 
-Example of 2 requests per second:
-
-```bash
-./wplace_archiver [mode] --rps 2
-```
-
-Or same, but in requests per minute:
-
-```bash
-./wplace_archiver [mode] --rpm 120
-```
-
-The defaults should work as-is, though to get archiving done faster you might wan't to fine tune these. If you go too high, you'll start to get a lot of errors. The faster the errors show up the more it needs to be tuned down.
+-   To change the requests per second limit, use `--rps` option.
+-   To change the amount of simultaneous requests, use `--rc` option.
+-   To respect the delay that server requests on Too Many Requests error, set `--respect-429-delay` option.
 
 ## Developing
 
