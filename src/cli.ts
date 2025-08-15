@@ -5,6 +5,7 @@ import { saveRegion, type Region } from '$src/saveRegion';
 import type { GeneralOptions, Size } from '$src/types';
 import { Option, program } from '@commander-js/extra-typings';
 import { z } from 'zod';
+import { saveGrabbyByRegion } from '$src/saveGrabbyByRegion';
 
 function parseTilePosition(value: string): TilePosition {
     try {
@@ -71,10 +72,11 @@ function arrayToCopiedWithoutEntry<T extends unknown>(arr: T[], entry: T): T[] {
 const generalOpts: GeneralOptions = program
     .name("wplace_archiver")
     .description("Archiver utility for https://wplace.live")
-    .option("-o, --out <dirpath>", "Output directory path. By default, is 'archives'. See each mode for how they format their outputs.", "archives")
+    .option("-o, --out <dirpath>", "Output directory path for all that is archived. Each mode customizes its saving path further, so each mode help for details.", "archives")
     .option("--rps, --requests-per-second <number>", "Requests per second. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", getIntRangeParser(1, Infinity), 20)
     .option("--rc, --request-concurrency <number>", "Request concurrency. How many requests are allowed to run in parallel? Higher value could cause Too Many Requests errors, significantly lowering RPS.", getIntRangeParser(1, Infinity), 10)
     .option("-l, --loop", "Run archiving continuously? Once archival is complete, it will run again. Saving path may be altered - see each mode for details.", false)
+    .option("--cycle-start-delay <seconds>", "Delay before starting an archival cycle.", getIntRangeParser(0, Infinity), 3)
     .option("--respect-429-delay, --respect-too-many-requests-delay", "If set, the retry delay for Too Many Requests error included by Retry-After header will be respected. By default, no retry delay is applied on this error - it is retried immediately instead (if slots are available). This is done to achieve higher RPS, and works due to poor rate limiting implementation on Wplace part.", false)
     .opts();
 
@@ -82,7 +84,17 @@ const regionSubcommands = ["size", "to", "radius"];
 program.command("region")
     .description("Captures a region of tiles.")
     .argument("<tile X,Y>", "Position of the starting tile formatted as X,Y. Each value must be from 0 to 2047.", parseTilePosition)
-    .option("--out2 <dirpath>", "Output directory path. Appended to general variant of --out like this: '<general dirpath>/<this dirpath>'. By default, is (see the default value), excluding brackets, where X and Y are positions of the upper left corner of a region, W and H are dimensions of that region, 'date' is a iso-like timestamp of when the archival begun and 'duration' is a duration that archival took (added afterwards). If specifying path that has any of previously mentioned variables (as plain text, no brackets), they will be replaced with actual values'", 'regions/region-Xtile_x-Ytile_y-Wwidth_tiles-Hheight_tiles/date+duration')
+    .option("--out2 <dirpath>", `\
+Output directory path. Appended to general variant of --out like this: '<general dirpath>/<this dirpath>'. 
+By default, is: (see default value)
+
+Where:
+- %tile_x and %tile_x are positions of the upper left corner of a region like '1238' and '639'
+- %width_tiles and height_tiles are dimensions of the region like '30' and '40'
+- %date is a start time of archival cycle, an iso-like string like 2025-08-15T12-11-09.590Z
+- %duration is a duration that archival took like '16m' or '1h7m'. It is added after a cycle is complete.
+
+Strings that match variables described above (starting with '%'), will be replaced by their values.`, 'regions/region-X%tile_x-Y%tile_y-W%width_tiles-H%height_tiles/%date+%duration')
     .addOption(new Option("--size <W,H>", "Size in tiles formatted as W,H, where W is width and H is height. This will extend the region horizontally right and vertically down. Each value must be from 1 to 2048.")
         .conflicts(arrayToCopiedWithoutEntry(regionSubcommands, "size"))
         .argParser(parseSizeOption)
@@ -161,141 +173,79 @@ program.command("region")
         }
 
         await saveRegion({ region, out: opts.out2 }, generalOpts);
+
+        // hard exit in case of a dangling promise
+        process.exit();
     });
+
+const grabbyOut2Default =
+    'grabs/tiles/X%tile_x-Y%tile_y/%date+%duration';
+const grabbyOut2DefaultInLeaderboardMode =
+    'grabs/by region/%period/%country_flag %country/%place #%place_number';
+const grabbyOut3Default = '%date+%duration';
 
 program.command("grabby")
     .description("Grabs tiles around starting tile until no tiles without pixels above threshold are left.")
-    .argument("<tile X,Y>", "Position of starting tile formatted as X,Y. Each value must be from 0 to 2047.", parseTilePosition)
-    .option("--out2 <dirpath>", "Output directory path. Appended to general variant of --out like this: '<general dirpath>/<this dirpath>'. By default, is (see the default value), excluding brackets, where X and Y is starting tile position, 'date' is a iso-like timestamp of when the archival begun and 'duration' is a duration that archival took (added afterwards). If specifying path that has any of previously mentioned variables (as plain text, no brackets), they will be replaced with actual values'", 'grabs/Xtile_x-Ytile_y/date+duration')
+    .argument("[tile X,Y]", "Position of starting tile formatted as X,Y. Each value must be from 0 to 2047.", parseTilePosition)
+    .option("--out2 <dirpath>", `\
+Output directory path. Appended to --out like so: 
+'--out/--out2'
+
+- Default in normal mode: '${grabbyOut2Default}'
+- Default in leaderboard mode: '${grabbyOut2DefaultInLeaderboardMode}'`)
+    .option("--out3 <dirpath>", `\
+Extra output directory path. Only used in leaderboard mode. Appended to --out2 like so:
+'--out/--out2/--out3'`, grabbyOut3Default)
     .option("--pixel-threshold <amount>", "Minimum amount of pixels in a tile for it to be saved. Value from 1 to 1 000 000.", parseTilePixelCount, 10)
     .option("--tile-tolerance <radius>", "Circular radius around a tile to check surrounding tiles. Value from 1.5 to 15.", getFloatRangeParser(1.5, 15), 1.5)
     .option("-r, --radius <value>", "Maximum circular radius to go to from starting tile. Value from 1 to 250.", getFloatRangeParser(1, 250), 15)
+    .option("--leaderboard", "Enables fetching from leaderboard. Requires selecting category and period. Alters --out2 (see leaderboard category options for details).", false)
+    .option("--by-region", `\
+Sets by-region category for leaderboard fetching. Changes --out2 path (if it's not been set):
+'${grabbyOut2DefaultInLeaderboardMode}'
+
+Where:
+- %period is period like 'all-time'
+- %country_flag is country flag emoji like 🇦🇫 (may be displayed improperly due to console formatting)
+- %country is country name like Afghanistan
+- %place is place name like Seoul
+- %place_number is place number like 14
+
+Additionally, --leaderboard-out is appended to this path.
+
+Other variables are described in help for --out.`, false)
+    .option("--all-time", "Sets all-time period for leaderboard fetching.", false)
     .action(async (xy, opts) => {
-        // await blep({
-        //     startingTile: xy,
-        //     pixelThreshold: opts.pixelThreshold,
-        //     tileTolerance: opts.tileTolerance,
-        //     radius: opts.radius,
-        //     out: opts.out2
-        // }, generalOpts);
+        if (opts.leaderboard) {
+            if (!opts.byRegion)
+                program.error(`leaderboard category not specified.`);
+            else if (!opts.allTime) {
+                program.error(`leaderboard period not specified.`);
+            }
 
+            await saveGrabbyByRegion({
+                period: 'all-time',
+                pixelThreshold: opts.pixelThreshold,
+                tileTolerance: opts.tileTolerance,
+                radius: opts.radius,
+                placeOutDirpath: opts.out2 ?? grabbyOut2DefaultInLeaderboardMode,
+                fromPlaceOutDirpath: opts.out3
+            }, generalOpts);
+        } else {
+            if (!xy)
+                program.error("tile position not specified");
 
-        saveGrabby({
-            startingTile: xy,
-            pixelThreshold: opts.pixelThreshold,
-            tileTolerance: opts.tileTolerance,
-            radius: opts.radius,
-            out: opts.out2
-        }, generalOpts);
+            await saveGrabby({
+                startingTile: xy,
+                pixelThreshold: opts.pixelThreshold,
+                tileTolerance: opts.tileTolerance,
+                radius: opts.radius,
+                out: opts.out2 ?? grabbyOut2Default
+            }, generalOpts);
+        }
+
+        // hard exit in case of a dangling promise
+        process.exit();
     });
 
 program.parse();
-
-
-// async function blep(modeOpts: GrabbyOpts, generalOpts: GeneralOptions) {
-//     type RegionSchema = z.infer<typeof regionSchema>;
-//     const regionSchema = z.object({
-//         "id": z.number(), // ex: 115328,
-//         "name": z.string(),// ex: "Mérida",
-//         "cityId": z.number(), // ex: 2142,
-//         "number": z.number(), // ex: 56,
-//         "countryId": z.number(), // ex: 140,
-//         "pixelsPainted": z.number(), // ex: 861488,
-//         "lastLatitude": z.number(), // ex: 21.003373619322986,
-//         "lastLongitude": z.number(), // ex: -89.58875976562501
-//     });
-
-//     type RegionSchemaPlus = RegionSchema & { tileX: number, tileY: number };
-
-//     const placedToFetch = 50;
-//     const placesRes: RegionSchemaPlus[] = [];
-
-//     console.log(`fetching ${placedToFetch} places`)
-
-//     let index = 0;
-//     while (placesRes.length < placedToFetch) {
-//         const leftToAdd = placedToFetch - placesRes.length;
-
-//         const url = `https://backend.wplace.live/leaderboard/region/all-time/${index++}`;
-//         console.log("fetching: " + url);
-//         let places;
-//         let attemptIndex = 0;
-//         while (true) {
-//             const dotsArr = [
-//                 "",
-//                 ".",
-//                 "..",
-//                 "...",
-//                 " ..",
-//                 "  .",
-//                 "   ",
-//             ];
-//             const dots1 = dotsArr[attemptIndex % dotsArr.length];
-//             const dots2 = dotsArr[(dotsArr.length - 1) - attemptIndex % dotsArr.length];
-
-//             console.log(`${dots2}attempting${dots1}`)
-//             places = await fetch(url)
-//                 .then(res => res.json());
-
-//             if ((typeof places === 'object' && places.status === 500)) {
-//                 await wait(250);
-
-//                 attemptIndex++;
-//                 continue;
-//             }
-
-//             places = regionSchema.array().parse(places);
-//             break;
-//         }
-
-//         if (places.length === 0) {
-//             console.warn("places fetched length is 0");
-//             break;
-//         }
-
-//         console.log(places);
-//         const placesMapped = places.map(mapPlace);
-
-//         const placesBeforeLen = placesRes.length;
-//         if (leftToAdd >= places.length) {
-//             placesRes.push(...placesMapped)
-//         } else {
-//             placesRes.push(...placesMapped.slice(0, leftToAdd))
-//         }
-
-//         console.log(`added to places: ${placesRes.length - placesBeforeLen}; total: ${placesRes.length}`);
-
-//         await wait(250);
-//     }
-
-//     for (const [i, place] of placesRes.entries()) {
-//         const placeLink = `https://wplace.live/?lat=${place.lastLatitude}&lng=${place.lastLongitude}&zoom=11`;
-//         console.log(`[${i + 1} of ${placesRes.length}] processing place ${chalk.bold(place.name)} (tile X${place.tileX} Y${place.tileY}; lon ${place.lastLongitude} lat ${place.lastLatitude}):\n${placeLink}`);
-
-//         modeOpts.startingTile = new TilePosition(place.tileX, place.tileY);
-
-//         await saveGrabby(modeOpts, generalOpts);
-//     }
-
-//     function mapPlace(place: RegionSchema): RegionSchemaPlus {
-//         return {
-//             ...place,
-//             tileX: lon2tile(place.lastLongitude, 11),
-//             tileY: lat2tile(place.lastLatitude, 11),
-//         }
-//     }
-
-//     // converters from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Common_programming_languages
-
-//     function lon2tile(lon, zoom): number { return (Math.floor((lon + 180) / 360 * Math.pow(2, zoom))); }
-//     function lat2tile(lat, zoom): number { return (Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))); }
-
-//     function tile2long(x, z) {
-//         return (x / Math.pow(2, z) * 360 - 180);
-//     }
-//     function tile2lat(y, z) {
-//         var n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
-//         return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
-//     }
-
-// }

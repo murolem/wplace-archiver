@@ -19,3 +19,18 @@ export async function tryGetResponseBodyAsText(response: Response): Promise<stri
     return await response.text()
         .catch(err => null);
 }
+
+export function isRetryableStatus(status: number): boolean {
+    if (status >= 500)
+        return true;
+
+    switch (status) {
+        case 408: return true // timeout
+        case 429: return true // too many requests
+        default: return false
+    }
+}
+
+export function isRetryableResponse(response: Response): boolean {
+    return isRetryableStatus(response.status);
+}

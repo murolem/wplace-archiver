@@ -42,12 +42,13 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
 
     const cycler = new Cycler({
         workingDir: generalOpts.out,
+        cycleStartDelayMs: generalOpts.cycleStartDelay * 1000,
 
         cycleDirpathPreFormatter(timeStart: Date) {
             return modeOpts.out
-                .replaceAll('tile_x', modeOpts.startingTile.x.toString())
-                .replaceAll('tile_y', modeOpts.startingTile.y.toString())
-                .replaceAll('date', formatDateToFsSafeIsolike(timeStart))
+                .replaceAll('%tile_x', modeOpts.startingTile.x.toString())
+                .replaceAll('%tile_y', modeOpts.startingTile.y.toString())
+                .replaceAll('%date', formatDateToFsSafeIsolike(timeStart))
         },
 
         cycleDirpathPostFormatter({
@@ -55,7 +56,7 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
             previousCycleFmtedDirpath,
             elapsedMs
         }) {
-            return previousCycleFmtedDirpath.replaceAll('duration', formatMsToDurationDirnamePart(elapsedMs));
+            return previousCycleFmtedDirpath.replaceAll('%duration', formatMsToDurationDirnamePart(elapsedMs));
         },
 
         async cycle({
@@ -235,9 +236,6 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
     });
 
     await cycler.start(generalOpts.loop);
-
-    // hard exit because of some dangling promise, somewhere...
-    process.exit();
 }
 
 async function hasAtLeastNPixels(tileImage: TileImage, pixels: number): Promise<boolean> {

@@ -61,14 +61,15 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptio
 
     const cycler = new Cycler({
         workingDir: generalOpts.out,
+        cycleStartDelayMs: generalOpts.cycleStartDelay * 1000,
 
         cycleDirpathPreFormatter(timeStart: Date) {
             return modeOpts.out
-                .replaceAll('tile_x', region.xy1.x.toString())
-                .replaceAll('tile_y', region.xy1.y.toString())
-                .replaceAll('width_tiles', regionSize.w.toString())
-                .replaceAll('height_tiles', regionSize.h.toString())
-                .replaceAll('date', formatDateToFsSafeIsolike(timeStart))
+                .replaceAll('%tile_x', region.xy1.x.toString())
+                .replaceAll('%tile_y', region.xy1.y.toString())
+                .replaceAll('%width_tiles', regionSize.w.toString())
+                .replaceAll('%height_tiles', regionSize.h.toString())
+                .replaceAll('%date', formatDateToFsSafeIsolike(timeStart))
         },
 
         cycleDirpathPostFormatter({
@@ -76,7 +77,7 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptio
             previousCycleFmtedDirpath,
             elapsedMs
         }) {
-            return previousCycleFmtedDirpath.replaceAll('duration', formatMsToDurationDirnamePart(elapsedMs));
+            return previousCycleFmtedDirpath.replaceAll('%duration', formatMsToDurationDirnamePart(elapsedMs));
         },
 
         async cycle({

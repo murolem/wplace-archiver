@@ -99,12 +99,15 @@ export class Cycler {
             errorsDirpathRelToWorkDir = `${outDirpathRelToWorkDir}-ERRORS`;
             errorsDirpath = path.join(this._workingDir, errorsDirpathRelToWorkDir);
 
-            fs.renameSync(oldOutDirpath, outDirpath);
+            if (outDirpath !== oldOutDirpath)
+                fs.renameSync(oldOutDirpath, outDirpath);
 
-            if ((await fs.readdir(oldErrorsDirpath)).length === 0)
-                fs.rmdirSync(oldErrorsDirpath);
-            else
-                fs.renameSync(oldErrorsDirpath, errorsDirpath);
+            if (errorsDirpath !== oldErrorsDirpath) {
+                if ((await fs.readdir(oldErrorsDirpath)).length === 0)
+                    fs.rmdirSync(oldErrorsDirpath);
+                else
+                    fs.renameSync(oldErrorsDirpath, errorsDirpath);
+            }
 
             const elapsedFmted = humanizeDuration(elapsedMs, { round: true });
             if (loop) {

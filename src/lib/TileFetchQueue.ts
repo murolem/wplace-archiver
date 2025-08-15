@@ -1,5 +1,5 @@
 import { getTileLogPrefix } from '$lib/logging';
-import { getExpDelayCalculator, tryGetResponseBodyAsText } from '$lib/network';
+import { getExpDelayCalculator, isRetryableResponse, tryGetResponseBodyAsText } from '$lib/network';
 import { stringifyErr } from '$lib/result';
 import { stringify } from '$lib/stringify';
 import { Logger } from '$utils/logger';
@@ -9,9 +9,7 @@ import { wait } from '$utils/wait';
 import chalk from 'chalk';
 import { err, ok, type Result } from 'neverthrow';
 import PQueue from 'p-queue';
-
-/** Formatting option for percentage progress for logging. */
-const progressPercentageDigitsAfterComma = 3;
+import humanizeDuration from 'humanize-duration';
 
 type EnqueueTaskResult = Result<
     TileImage,
@@ -177,8 +175,9 @@ export class TileFetchQueue {
                 });
 
             clearTimeout(abortHandle);
+
             if (responseRes.isErr()) {
-                logError(`error while fetching; retrying in ${retryDelayMs}ms`);
+                logError(`error while fetching; retrying in ${humanizeDuration(retryDelayMs)}`);
                 writeError(stringifyErr(responseRes));
                 return err({ type: 'retryable' });
             }
@@ -204,10 +203,10 @@ export class TileFetchQueue {
                     let pauseDurationMs: number = 0;
                     if (this._respectTooManyRequestsDelay) {
                         if (retryAfterHeader) {
-                            logWarn(`too many requests; pausing queue for ${pauseDurationMs}ms (set by Retry-After header) before retrying. consider decreasing RPS/concurrency.`);
+                            logWarn(`too many requests; pausing queue for ${humanizeDuration(pauseDurationMs)} (set by Retry-After header) before retrying. consider decreasing RPS/concurrency.`);
                             pauseDurationMs = parseInt(retryAfterHeader) * 1000;
                         } else {
-                            logWarn(`too many requests; pausing queue for ${pauseDurationMs}ms before retrying. consider decreasing RPS/concurrency.`);
+                            logWarn(`too many requests; pausing queue for ${humanizeDuration(pauseDurationMs)} before retrying. consider decreasing RPS/concurrency.`);
                             pauseDurationMs = retryDelayMs;
                         }
                     } else {
@@ -218,19 +217,19 @@ export class TileFetchQueue {
                         await this._tryPauseQueueForMs(pauseDurationMs);
 
                     return err({ type: 'retryable', retryDelayMsOverride: 0 });
-                } else if (resStatusStr.startsWith('4')) {
-                    logError("client error. cancelling download for this tile.");
-                    writeError(
-                        stringify({ type: "client error", url, status: res.status, statusText: res.statusText, body: await tryGetResponseBodyAsText(res) })
-                    );
-                    return err({ type: 'unrecoverable' });
-                } else {
+                } else if (isRetryableResponse(res)) {
                     // 5XX
-                    logError(`server error. retrying in ${retryDelayMs}ms (+time to save the error)`);
+                    logError(`request error. retrying in ${humanizeDuration(retryDelayMs)} (+time to save the error)`);
                     writeError(
-                        stringify({ type: "server error", url, status: res.status, statusText: res.statusText, body: await tryGetResponseBodyAsText(res) })
+                        stringify({ type: "retryable request error", url, status: res.status, statusText: res.statusText, body: await tryGetResponseBodyAsText(res) })
                     );
                     return err({ type: 'retryable' });
+                } else {
+                    logError("request error. cancelling download for this tile.");
+                    writeError(
+                        stringify({ type: "fatal request error", url, status: res.status, statusText: res.statusText, body: await tryGetResponseBodyAsText(res) })
+                    );
+                    return err({ type: 'unrecoverable' });
                 }
             }
 
@@ -239,7 +238,7 @@ export class TileFetchQueue {
                 .catch(error => err({ url, error }));
 
             if (tileImageRes.isErr()) {
-                logError(`error while trying to extract tile image. retrying in ${retryDelayMs}ms`);
+                logError(`error while trying to extract tile image. retrying in ${humanizeDuration(retryDelayMs)}`);
                 writeError(stringifyErr(tileImageRes));
                 return err({ type: 'retryable' });
             }
