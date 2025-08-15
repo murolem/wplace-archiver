@@ -9,7 +9,7 @@
     "build:linux-x64": "npm run build:base -- --target=bun-linux-x64",
     "build:windows-x64": "npm run build:base -- --target=bun-windows-x64",
     "build:current": "npm run build:base",
-    "build:base": "bun build  ./src/cli.ts --compile --outfile \"dist/wplace_archiver\""
+    "build:base": "bun build  ./src/cli.ts --compile --minify --sourcemap --outfile \"dist/wplace_archiver\""
   },
   "bin": {
     "app": "src/cli.ts"
@@ -34,6 +34,7 @@
     "node-fetch": "^3.3.2",
     "p-queue": "^8.1.0",
     "pkg": "^5.8.1",
+    "sanitize-filename": "^1.6.3",
     "sharp": "^0.34.3",
     "tsx": "^4.20.3",
     "victor": "^1.1.0",
