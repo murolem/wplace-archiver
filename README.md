@@ -50,6 +50,24 @@ To see commands for a specific mode, run:
 
 ## Modes
 
+### Grabby [leaderboards]
+
+A grabby mode that allows to archive leaderboards. Currently only supports Regions category and all-time period.
+
+-   The mode is toggled one when in grabby mode, by passing `--leaderboard`.
+-   Leaderboard category is toggled by `--by-<category>`. Currently only `--by-region` is available.
+-   Currently, only available period is `--all-time`.
+
+Example (regions, all time): `./wplace_archiver grabby --leaderboard --by-region --all-time`.
+
+Output path is also modified. See help on `--out2` and `--out3` for more.
+
+To get help on this mode (see available commands), run:
+
+```bash
+./wplace_archiver help grabby
+```
+
 ### Grabby
 
 Code: `grabby`
@@ -61,6 +79,12 @@ Grabs tiles around starting tile until there are no more tiles to grab within a 
 ```
 
 For example, to archive the entirety of Moscow, run: `npm start -- grabby 1238,639`.
+
+To get help on this mode (see available commands), run:
+
+```bash
+./wplace_archiver help grabby
+```
 
 **Note:** if you getting **Too Many Requests** error, it is expected. The script "bruteforces" through these errors and it works anyway (to a degree) due to poor rate limiting implementation on Wplace.
 
@@ -95,6 +119,12 @@ Example: `./wplace_archiver region 570,710 --to 600,750`
 ```
 
 Example: `./wplace_archiver region 594,733 --radius 8`
+
+To get help on this mode (see available commands), run:
+
+```bash
+./wplace_archiver help region
+```
 
 #### Additional options
 
