@@ -5,7 +5,7 @@ import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDir
 import { TileFetchQueue } from '$lib/TileFetchQueue'
 import { Cycler } from '$lib/Cycler'
 import { wait } from '$utils/wait'
-import sharp from 'sharp'
+import { Jimp } from "jimp";
 import { getTileLogPrefix } from '$lib/logging'
 import { TilePosition } from '$lib/TilePosition'
 import { err, ok, type Result } from 'neverthrow'
@@ -238,38 +238,12 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
     await cycler.start(generalOpts.loop);
 }
 
-async function hasAtLeastNPixels(tileImage: TileImage, pixels: number): Promise<boolean> {
-    const buf = await sharp(tileImage)
-        .raw()
-        .toBuffer();
-    const view = Uint8Array.from(buf);
-
-    let nonEmptyPixelCount = 0;
-    for (let i = 0; i < view.length; i += 4) {
-        // const [r, g, b, a] = view.slice(i, i + 3);
-
-        // check alpha
-        if (view[i + 4] > 0)
-            nonEmptyPixelCount++;
-
-        if (nonEmptyPixelCount >= pixels)
-            return true;
-    }
-
-    return false;
-}
-
 async function countPixels(tileImage: TileImage): Promise<number> {
-    const buf = await sharp(tileImage)
-        .raw()
-        .toBuffer();
-    const view = Uint8Array.from(buf);
+    const imgJimp = await Jimp.fromBuffer(tileImage);
+    const view = Uint8Array.from(imgJimp.bitmap.data);
 
     let nonEmptyPixelCount = 0;
     for (let i = 0; i < view.length; i += 4) {
-        // const [r, g, b] = view.slice(i, i + 3);
-        // if (r > 0 || g > 0 || b > 0)
-
         // check alpha
         if (view[i + 4] > 0)
             nonEmptyPixelCount++;
