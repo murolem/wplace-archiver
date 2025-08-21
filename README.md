@@ -52,15 +52,13 @@ To see commands for a specific mode, run:
 
 ### Grabby [leaderboards]
 
-A grabby mode that allows to archive leaderboards. Currently only supports Regions category and all-time period.
+A grabby mode that allows to archive leaderboards.
 
 -   The mode is toggled one when in grabby mode, by passing `--leaderboard`.
 -   Leaderboard category is toggled by `--by-<category>`. Currently only `--by-region` is available.
--   Currently, only available period is `--all-time`.
+-   Available periods: `--today`, `--week`, `--month`, `--all-time`.
 
 Example (regions, all time): `./wplace_archiver grabby --leaderboard --by-region --all-time`.
-
-Output path is also modified. See help on `--out2` and `--out3` for more.
 
 To get help on this mode (see available commands), run:
 
@@ -86,9 +84,7 @@ To get help on this mode (see available commands), run:
 ./wplace_archiver help grabby
 ```
 
-**Note:** if you getting **Too Many Requests** error, it is expected. The script "bruteforces" through these errors and it works anyway (to a degree) due to poor rate limiting implementation on Wplace.
-
-**Note2:** if you want to go paint while archival in progress, press Ctrl+C to pause the archival and free bandwidth to the server. This should help tiles load. Pressing Enter will resume the process. Currently works only for this mode, and not in between runs.
+**Note:** if you want to go paint while archival in progress, press Ctrl+C to pause the archival and free bandwidth to the server. This should help tiles load. Pressing Enter will resume the process. Currently works only for this mode, and not in between runs.
 
 ### Region
 
@@ -146,36 +142,45 @@ Example: `npm start -- grabby 1792,708 --loop`.
 
 ## Rate limiting
 
-The server has pretty low limits on amount of requests per second, so some tweaking might be required. At the moment of writing this, the defaults are pretty good and fine-tuned for good RPS, even going past the limit and rate limit errors (to some degree).
+Defaults should work as is, without getting rate limited. The server has pretty low limits on amount of requests per second, so for a better speed some tweaking might be required. Though it's easy to get rate limited with such a low limit - and at the moment of writing this, the delay requested by the server is **one minute**.
 
 -   To change the requests per second limit, use `--rps` option.
 -   To change the amount of simultaneous requests, use `--rc` option.
--   To respect the delay that server requests on Too Many Requests error, set `--respect-429-delay` option.
 
 ## Developing
 
 ### Setup
 
-Requires Node and Bun installed.
+Requires Bun installed.
 
 Install dependencies:
 
 ```bash
-npm i
+bun i
 ```
+
+### Running
+
+Run with:
+
+```bash
+bun start
+```
+
+This is the equivalent to running `./wplace_archiver`.
 
 ### Building
 
-Bun is used as a "compiler" for CLI binaries.
+Bun is used as a compiler for CLI binaries.
 
 Build for all configured platforms with:
 
 ```bash
-npm run build
+bun run build
 ```
 
 Build for current platform:
 
 ```bash
-npm run build:current
+bun run build:current
 ```
