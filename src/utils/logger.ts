@@ -141,4 +141,21 @@ export class Logger {
     logFatal = (messageOrParams: MessageOrParams, ...extraMessages: unknown[]): void => {
         this.log('FATAL', messageOrParams, ...extraMessages);
     }
+
+    logFatalAndThrow = (messageOrParams: Message | Omit<MessageParams, 'throw'>, ...extraMessages: unknown[]): never => {
+        if (typeof messageOrParams === 'string') {
+            this.log('FATAL', {
+                msg: messageOrParams,
+                throw: true
+            }, ...extraMessages);
+        } else {
+            this.log('FATAL', {
+                ...messageOrParams,
+                throw: true
+            }, ...extraMessages);
+        }
+
+        // should not happen unless logger logic gets fucked up
+        throw new Error("failed to log fatal and throw: should have thrown, not expected to reach this point");
+    }
 }

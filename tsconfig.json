@@ -19,6 +19,9 @@
       "$logger": [
         "./src/utils/logger.ts"
       ],
+      "$cli/*": [
+        "./src/cli/*"
+      ],
       "$lib/*": [
         "./src/lib/*"
       ],
@@ -44,6 +47,7 @@
     "noUncheckedSideEffectImports": true
   },
   "include": [
-    "src"
+    "src",
+    "wa"
   ]
 }

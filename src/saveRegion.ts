@@ -1,5 +1,5 @@
 import { Logger } from '$utils/logger'
-import type { GeneralOptions, Position, RegionOpts, Size } from '$src/types'
+import type { Position, Size } from '$src/types'
 import { clamp } from '$utils/clamp'
 import { convertIndexToXyPosition } from '$utils/converters'
 import chalk from 'chalk'
@@ -7,10 +7,13 @@ import humanizeDuration from "humanize-duration"
 // @ts-ignore no types
 import humanizeNumber from 'humanize-number'
 import { confirm } from '@inquirer/prompts'
-import { formatDateToFsSafeIsolike, formatMsToDurationDirnamePart } from '$src/lib/formatters'
+import { formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$src/lib/formatters'
 import { TileFetchQueue } from '$lib/TileFetchQueue'
 import { Cycler } from '$lib/Cycler'
 import { mapDimensionsInTiles } from '$src/constants'
+import { noop } from '$utils/noop'
+import { TilePosition } from '$lib/TilePosition'
+import type { RegionOpts, GeneralOpts } from '$cli/types'
 const logger = new Logger("mode-region");
 const { logInfo, logError, logWarn } = logger;
 
@@ -19,15 +22,14 @@ export type Region = {
     xy2: Position
 }
 
-export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptions) {
+export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts) {
     const projectDurationLongTimeWarningSeconds = 2 * 60 * 60; // 2 hours
 
     // =======
 
     const tileQueue = new TileFetchQueue({
         requestsPerSecond: generalOpts.requestsPerSecond,
-        requestConcurrency: generalOpts.requestConcurrency,
-        respectTooManyRequestsDelay: generalOpts.respectTooManyRequestsDelay
+        requestConcurrency: generalOpts.requestConcurrency
     });
 
     const region = modeOpts.region;
@@ -45,48 +47,58 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptio
             return;
     }
 
-    const convertTileIndexToTilePos = (index: number): Position => {
+    const convertTileIndexToTilePos = (index: number): TilePosition => {
         const localPos = convertIndexToXyPosition(index, regionSize.w);
-        return {
-            x: (region.xy1.x + localPos.x) % mapDimensionsInTiles,
-            y: (region.xy1.y + localPos.y) % mapDimensionsInTiles,
-        }
+        return new TilePosition(
+            (region.xy1.x + localPos.x) % mapDimensionsInTiles,
+            (region.xy1.y + localPos.y) % mapDimensionsInTiles,
+        );
     };
 
-    function* getTilePositionGenerator(): Generator<Position> {
+    function* getTilePositionGenerator(): Generator<TilePosition> {
         for (let i = 0; i < tilesTotal; i++) {
             yield convertTileIndexToTilePos(i);
         }
     }
 
-    const cycler = new Cycler({
-        workingDir: generalOpts.out,
-        cycleStartDelayMs: generalOpts.cycleStartDelay * 1000,
+    await new Cycler()
+        .loop(generalOpts.loop)
+        .startDelay(generalOpts.cycleStartDelay)
+        .outputFilepath(generalOpts.out, generalOpts.errOut, {
+            pre({ pattern, cycleStarted }) {
+                return substituteOutVariables(pattern, {
+                    // general
+                    '%date': formatDateToFsSafeIsolike(cycleStarted),
+                    '%tile_start_x': region.xy1.x.toString(),
+                    '%tile_start_y': region.xy1.y.toString(),
+                    '%tile_ext': 'png',
+                    // mode specific
+                    '%width_tiles': regionSize.w.toString(),
+                    '%height_tiles': regionSize.h.toString(),
+                });
+            },
 
-        cycleDirpathPreFormatter(timeStart: Date) {
-            return modeOpts.out
-                .replaceAll('%tile_x', region.xy1.x.toString())
-                .replaceAll('%tile_y', region.xy1.y.toString())
-                .replaceAll('%width_tiles', regionSize.w.toString())
-                .replaceAll('%height_tiles', regionSize.h.toString())
-                .replaceAll('%date', formatDateToFsSafeIsolike(timeStart))
-        },
+            cycle({ pattern, cycleStarted, preStageFmtedFilepath, tilePos, attemptIndex }) {
+                return substituteOutVariables(preStageFmtedFilepath, {
+                    // general
+                    '%tile_x': tilePos.x.toString(),
+                    '%tile_y': tilePos.y.toString(),
+                    // errors
+                    '%attempt': attemptIndex.toString(),
+                    '%err_ext': 'txt'
+                });
+            },
 
-        cycleDirpathPostFormatter({
-            timeEnd,
-            previousCycleFmtedDirpath,
-            elapsedMs
-        }) {
-            return previousCycleFmtedDirpath.replaceAll('%duration', formatMsToDurationDirnamePart(elapsedMs));
-        },
-
-        async cycle({
-            workingDir,
-            outDirpath,
-            errorsDirpath,
+            post({ writtenPath, cycleStarted, cycleFinished: cycleEnded, cycleElapsedMs }) {
+                return substituteOutVariables(writtenPath, {
+                    '%duration': formatMsToDurationDirnamePart(cycleElapsedMs)
+                });
+            }
+        })
+        .cycle(async ({
             writeTile,
-            writeError,
-        }) {
+            writeError
+        }) => {
             await tileQueue.enqueue(
                 getTilePositionGenerator,
                 writeError,
@@ -96,8 +108,6 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOptio
                 },
                 tasksCompleted => tasksCompleted / tilesTotal
             )
-        }
-    });
-
-    await cycler.start(generalOpts.loop);
+        })
+        .start();
 }

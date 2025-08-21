@@ -3,7 +3,7 @@ import { Logger } from '$logger';
 import { DeferredPromise } from '$utils/DeferredPromise';
 import { shallowCompareObjects } from '$utils/compareObjects';
 import chalk from 'chalk';
-const logger = new Logger("sigint-confirm");
+const logger = new Logger("confirm");
 
 let instance: SigintConfirm | null = null;
 
@@ -21,12 +21,11 @@ export class SigintConfirm {
             instance = this;
 
         let logLevelBeforeSigint = Logger.getLogLevel();
-        this._sigintPromise = new DeferredPromise<void>();
         const replaceSigintPromiseCb = () => {
             this._sigintPromise = new DeferredPromise();
             this._sigintPromise.then(replaceSigintPromiseCb);
         };
-        this._sigintPromise.then(replaceSigintPromiseCb);
+        replaceSigintPromiseCb();
 
         readline.emitKeypressEvents(process.stdin);
         // if (process.stdin.isTTY)
@@ -61,7 +60,6 @@ export class SigintConfirm {
                 Logger.setLogLevel('SIGINT');
                 logger.log('SIGINT', `${chalk.bold('Press again')} to exit or press ${chalk.bold("Enter")} to resume.`);
 
-                this._sigintPromise = new DeferredPromise();
                 return;
             }
 

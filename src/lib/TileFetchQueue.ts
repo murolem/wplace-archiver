@@ -4,12 +4,14 @@ import { stringifyErr } from '$lib/result';
 import { stringify } from '$lib/stringify';
 import { Logger } from '$utils/logger';
 import { maxRetryAfterMs } from '$src/constants';
-import type { Position, TileImage } from '$src/types';
+import type { TileImage } from '$src/types';
 import { wait } from '$utils/wait';
 import chalk from 'chalk';
 import { err, ok, type Result } from 'neverthrow';
 import PQueue from 'p-queue';
 import humanizeDuration from 'humanize-duration';
+import type { TilePosition } from '$lib/TilePosition';
+import type { FnWriteError } from '$lib/Cycler';
 
 type EnqueueTaskResult = Result<
     TileImage,
@@ -18,20 +20,20 @@ type EnqueueTaskResult = Result<
 >
 
 type EnqueueSingleFnInternal = (
-    tilePos: Position,
-    writeError: (attemptIndex: number, data: string) => void,
+    tilePos: TilePosition,
+    writeError: FnWriteError,
     progress?: number
 ) => Promise<Result<TileImage, null>>;
 
 export type EnqueueSingleFn = (
-    tilePos: Position,
-    writeError: (attemptIndex: number, data: string) => void
+    tilePos: TilePosition,
+    writeError: FnWriteError
 ) => Promise<Result<TileImage, null>>;
 
 export type EnqueueManyFn = (
-    tilePosGenerator: () => Generator<Position>,
-    writeError: (tilePos: Position, attemptIndex: number, data: string) => void,
-    cbTile: (tilePos: Position, result: Result<TileImage, null>) => Promise<void>,
+    tilePosGenerator: () => Generator<TilePosition>,
+    writeError: FnWriteError,
+    cbTile: (tilePos: TilePosition, result: Result<TileImage, null>) => Promise<void>,
     /** Get current progress, from 0 to 1. */
     getProgress?:
         /**
@@ -45,16 +47,13 @@ export class TileFetchQueue {
     private _targetQueueSize: number;
     private _getRetryDelay: ReturnType<typeof getExpDelayCalculator>;
     private _timeoutMs: number;
-    private _respectTooManyRequestsDelay: boolean;
 
     constructor(args: {
         requestsPerSecond: number,
         requestConcurrency: number,
-        respectTooManyRequestsDelay: boolean,
         targetQueueSize?: number
     }) {
         args.targetQueueSize ??= 5;
-        args.respectTooManyRequestsDelay ??= false;
 
         this._queue = new PQueue({ concurrency: args.requestConcurrency, interval: 1000 /** do not change */, intervalCap: args.requestsPerSecond });
         this._targetQueueSize = args.targetQueueSize;
@@ -67,13 +66,7 @@ export class TileFetchQueue {
             startingDelayMs: 100
         });
 
-        this._timeoutMs = args.respectTooManyRequestsDelay
-            // if respected, the queue will be paused and requests will abort while queue is paused
-            ? maxRetryAfterMs + 2 * 1000
-            // otherwise we could do with retry delay
-            : maxRetryDelayMs + 2 * 1000;
-
-        this._respectTooManyRequestsDelay = args.respectTooManyRequestsDelay;
+        this._timeoutMs = maxRetryDelayMs + 2 * 1000;
     }
 
     get isPaused(): boolean {
@@ -114,7 +107,7 @@ export class TileFetchQueue {
                 const removeCbPromiseFromCbQueue = () => void cbPromiseQueue.delete(resultAndCbPromise);
                 const resultAndCbPromise = this._enqueueSingle(
                     tilePos,
-                    (attemptIndex, data) => writeError(tilePos, attemptIndex, data),
+                    writeError,
                     getProgress ? getProgress(tasksCompleted) : undefined
                 )
                     .then(async (res) => await cbTile?.(tilePos, res))
@@ -151,7 +144,7 @@ export class TileFetchQueue {
             const logger = new Logger(getTileLogPrefix(tilePos, { progress: progress01 }));
             const { logInfo, logError, logWarn } = logger;
 
-            const writeError = (data: string) => writeErrorGeneral(attemptIndex, data);
+            const writeError = (error: string) => writeErrorGeneral(tilePos, attemptIndex, error);
 
             const ts = Date.now();
             const retryDelayMs = this._getRetryDelay(attemptIndex);
@@ -201,25 +194,20 @@ export class TileFetchQueue {
                     const retryAfterHeader = res.headers.get('Retry-After');
 
                     let pauseDurationMs: number = 0;
-                    if (this._respectTooManyRequestsDelay) {
-                        if (retryAfterHeader) {
-                            logWarn(`too many requests; pausing queue for ${humanizeDuration(pauseDurationMs)} (set by Retry-After header) before retrying. consider decreasing RPS/concurrency.`);
-                            pauseDurationMs = parseInt(retryAfterHeader) * 1000;
-                        } else {
-                            logWarn(`too many requests; pausing queue for ${humanizeDuration(pauseDurationMs)} before retrying. consider decreasing RPS/concurrency.`);
-                            pauseDurationMs = retryDelayMs;
-                        }
+                    if (retryAfterHeader) {
+                        pauseDurationMs = parseInt(retryAfterHeader) * 1000;
+                        logWarn(`too many requests; pausing queue for ${humanizeDuration(pauseDurationMs)} (set by Retry-After header) before retrying. consider decreasing RPS/concurrency.`);
                     } else {
-                        logWarn(`too many requests`);
+                        pauseDurationMs = retryDelayMs;
+                        logWarn(`too many requests; pausing queue for ${humanizeDuration(pauseDurationMs)} before retrying. consider decreasing RPS/concurrency.`);
                     }
 
-                    if (pauseDurationMs > 0)
-                        await this._tryPauseQueueForMs(pauseDurationMs);
+                    await this._tryPauseQueueForMs(pauseDurationMs);
 
                     return err({ type: 'retryable', retryDelayMsOverride: 0 });
                 } else if (isRetryableResponse(res)) {
                     // 5XX
-                    logError(`request error. retrying in ${humanizeDuration(retryDelayMs)} (+time to save the error)`);
+                    logError(`request error. retrying in ${humanizeDuration(retryDelayMs)}`);
                     writeError(
                         stringify({ type: "retryable request error", url, status: res.status, statusText: res.statusText, body: await tryGetResponseBodyAsText(res) })
                     );

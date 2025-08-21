@@ -1,7 +1,7 @@
 import { Logger } from '$utils/logger'
-import type { GeneralOptions, GrabbyOpts, Position, TileImage } from '$src/types'
+import type { Position, TileImage } from '$src/types'
 import chalk from 'chalk'
-import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart } from '$src/lib/formatters'
+import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$src/lib/formatters'
 import { TileFetchQueue } from '$lib/TileFetchQueue'
 import { Cycler } from '$lib/Cycler'
 import { wait } from '$utils/wait'
@@ -11,14 +11,21 @@ import { TilePosition } from '$lib/TilePosition'
 import { err, ok, type Result } from 'neverthrow'
 import PQueue from 'p-queue'
 import { SigintConfirm } from '$utils/sigintConfirm'
-const modeLogger = new Logger("mode-region");
+import { noop } from '$utils/noop'
+import type { GrabbyOpts, GeneralOpts, OutVariableWeakMap } from '$cli/types'
+const modeLogger = new Logger("grabby");
 const { logInfo, logError, logWarn } = modeLogger;
 
-export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptions) {
+export async function saveGrabby(
+    modeOpts: GrabbyOpts,
+    generalOpts: GeneralOpts,
+    internalOpts?: {
+        /** Extra variable substitution to perform on pre cycle. */
+        extraPreStageVarSubstitutions: OutVariableWeakMap
+    }) {
     const tileQueue = new TileFetchQueue({
         requestsPerSecond: generalOpts.requestsPerSecond,
-        requestConcurrency: generalOpts.requestConcurrency,
-        respectTooManyRequestsDelay: generalOpts.respectTooManyRequestsDelay
+        requestConcurrency: generalOpts.requestConcurrency
     });
     const processingQueue = new PQueue({ concurrency: generalOpts.requestConcurrency, interval: 1000 /** do not change */, intervalCap: generalOpts.requestsPerSecond });
 
@@ -40,32 +47,58 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
 
     logInfo(`grabby archival at ${chalk.bold("X" + modeOpts.startingTile.x)} ${chalk.bold("Y" + modeOpts.startingTile.y)} with ${chalk.bold(modeOpts.radius + ' tile radius')} above ${chalk.bold(modeOpts.tileTolerance + ' tile tolerance threshold')} (${tileDiscoveryOffsets.length} offsets per tile). ${chalk.bold("pixel threshold")} is set to ${chalk.bold(modeOpts.pixelThreshold + " pixels")}.`)
 
-    const cycler = new Cycler({
-        workingDir: generalOpts.out,
-        cycleStartDelayMs: generalOpts.cycleStartDelay * 1000,
+    /** external variable to hold written paths. this is just a hacky way so that we could return them. */
+    const postWrittenTileImagePaths = new Set<string>();
+    const postWrittenErrorPaths = new Set<string>();
 
-        cycleDirpathPreFormatter(timeStart: Date) {
-            return modeOpts.out
-                .replaceAll('%tile_x', modeOpts.startingTile.x.toString())
-                .replaceAll('%tile_y', modeOpts.startingTile.y.toString())
-                .replaceAll('%date', formatDateToFsSafeIsolike(timeStart))
-        },
+    await new Cycler()
+        .loop(generalOpts.loop)
+        .startDelay(generalOpts.cycleStartDelay)
+        .outputFilepath(generalOpts.out, generalOpts.errOut, {
+            pre({ pattern, cycleStarted }) {
+                return substituteOutVariables(pattern, {
+                    // extras, if any (first here to ignore conflict props in case there are any)
+                    ...internalOpts?.extraPreStageVarSubstitutions,
+                    // general
+                    '%date': formatDateToFsSafeIsolike(cycleStarted),
+                    '%tile_start_x': modeOpts.startingTile.x.toString(),
+                    '%tile_start_y': modeOpts.startingTile.y.toString(),
+                    '%tile_ext': 'png',
+                    // mode specific
+                    '%radius': modeOpts.radius.toString(),
+                });
+            },
 
-        cycleDirpathPostFormatter({
-            timeEnd,
-            previousCycleFmtedDirpath,
-            elapsedMs
-        }) {
-            return previousCycleFmtedDirpath.replaceAll('%duration', formatMsToDurationDirnamePart(elapsedMs));
-        },
+            cycle({ pattern, cycleStarted, preStageFmtedFilepath, tilePos, attemptIndex }) {
+                return substituteOutVariables(preStageFmtedFilepath, {
+                    // general
+                    '%tile_x': tilePos.x.toString(),
+                    '%tile_y': tilePos.y.toString(),
+                    // errors
+                    '%attempt': attemptIndex.toString(),
+                    '%err_ext': 'txt'
+                });
+            },
 
-        async cycle({
-            workingDir,
-            outDirpath,
-            errorsDirpath,
+            post({ writtenPath, cycleStarted, cycleFinished: cycleEnded, cycleElapsedMs, isTileImagePath }) {
+                const res = substituteOutVariables(writtenPath, {
+                    '%duration': formatMsToDurationDirnamePart(cycleElapsedMs)
+                });
+
+                if (isTileImagePath)
+                    postWrittenTileImagePaths.add(res);
+                else
+                    postWrittenErrorPaths.add(res);
+
+                return res;
+            }
+        })
+        .cycle(async ({
             writeTile,
             writeError,
-        }) {
+            getTileWriteFilepath,
+            getErrorWriteFilepath
+        }) => {
             type PositionStringified = string;
 
             let tilesSaved = 0;
@@ -173,7 +206,7 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
 
                 const tileRes = await tileQueue.enqueue(
                     tilePos,
-                    (attemptIndex, data) => writeError(tilePos, attemptIndex, data)
+                    writeError
                 )
 
                 if (tileRes.isErr()) {
@@ -192,14 +225,14 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
                     return;
                 }
 
-                logInfo(chalk.gray(`pixel threshold assed (${applyNumberUnitSuffix(pixelCount)} > ${modeOpts.pixelThreshold}), scheduling discovery for nearby tiles`));
+                logInfo(chalk.gray(`pixel threshold passed (${applyNumberUnitSuffix(pixelCount)} > ${modeOpts.pixelThreshold}), scheduling discovery for nearby tiles`));
                 const scheduledRes = tryAddTilePositionsToPool(
                     tileDiscoveryOffsets.map(offset => new TilePosition(
                         tilePos.x + offset.x,
                         tilePos.y + offset.y,
                     ))
                 );
-                logInfo(chalk.gray(`pixel threshold passed (${applyNumberUnitSuffix(pixelCount)} > ${modeOpts.pixelThreshold}); scheduled ${scheduledRes.success}/${scheduledRes.total}/${scheduledRes.alreadyPooled}/${scheduledRes.outsideRadius} (scheduled/total/already pooled/outside radius)\npool: ${tilePosPoolLength}/${tilePosPoolInProgressLen}/${tilesSaved}/${tilePosPoolCompleteLen} (scheduled/in progress/complete saved/complete total)`));
+                logInfo(chalk.gray(`nearby tiles: ${scheduledRes.success}/${scheduledRes.total}/${scheduledRes.alreadyPooled}/${scheduledRes.outsideRadius} (scheduled/total/already pooled/outside radius)\npool: ${tilePosPoolLength}/${tilePosPoolInProgressLen}/${tilesSaved}/${tilePosPoolCompleteLen} (scheduled/in progress/complete saved/complete total)`));
 
                 markTilePosComplete(tilePos);
             }
@@ -232,10 +265,13 @@ export async function saveGrabby(modeOpts: GrabbyOpts, generalOpts: GeneralOptio
 
             logInfo(`✅ grabby archival complete: saved ${chalk.bold(tilesSaved + " tiles")} out of ${chalk.bold(tilePosPoolCompleteLen + ' processed')}`);
             logInfo(`========================================`);
-        }
-    });
+        })
+        .start();
 
-    await cycler.start(generalOpts.loop);
+    return {
+        postWrittenTileImagePaths,
+        postWrittenErrorPaths
+    }
 }
 
 async function countPixels(tileImage: TileImage): Promise<number> {

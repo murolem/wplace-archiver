@@ -1,8 +1,8 @@
 import { Logger } from '$utils/logger'
-import type { GeneralOptions, GrabbyByRegionOpts, Place } from '$src/types'
+import type { Place } from '$src/types'
 import chalk from 'chalk'
-import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart } from '$src/lib/formatters'
-import { Cycler } from '$lib/Cycler'
+import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$src/lib/formatters'
+import { Cycler, type FnCycle, type FnGetErrorWriteFilepath, type FnGetTileWriteFilepath, type FnMarkFilepathWritten } from '$lib/Cycler'
 import { TilePosition } from '$lib/TilePosition'
 import { err, ok } from 'neverthrow'
 import { countries } from '$lib/countries'
@@ -11,7 +11,8 @@ import sanitizeFilename from 'sanitize-filename'
 import { saveGrabby } from '$src/saveGrabby'
 import path from 'path'
 import { isRetryableResponse } from '$lib/network'
-const modeLogger = new Logger("mode-grabby-leaderboard-by-region");
+import type { GrabbyByRegionOpts, GeneralOpts, OutVariableWeakMap } from '$cli/types'
+const modeLogger = new Logger("grabby leaderboard by-region");
 const { logInfo, logError, logWarn, logFatal } = modeLogger;
 
 export type PlaceRaw = z.infer<typeof rawPlaceSchema>;
@@ -26,13 +27,13 @@ const rawPlaceSchema = z.object({
     "lastLongitude": z.number(), // ex: -89.58875976562501
 });
 
-export async function saveGrabbyByRegion(modeOpts: GrabbyByRegionOpts, generalOpts: GeneralOptions) {
+export async function saveGrabbyLeaderboardsByRegion(modeOpts: GrabbyByRegionOpts, generalOpts: GeneralOpts) {
     logInfo(chalk.bold.magenta("⭐ GRABBY LEADERBOARD ARCHIVAL MODE ⭐"));
-    logInfo(`archiving leaderboard ${chalk.bold('by-region')}, ${chalk.bold(modeOpts.period)} period. countries to plow through: ${chalk.bold(countries.length)}`);
+    logInfo(`archiving leaderboard ${chalk.bold('by-region')}, period ${chalk.bold(modeOpts.period)}. countries to plow through: ${chalk.bold(countries.length)}`);
 
     const fetchCountryPlaces = async (id: number): Promise<Place[]> => {
-        const url = `https://backend.wplace.live/leaderboard/region/all-time/${id}`;
-        logInfo(`fetching all-time places \nurl: ${url}`)
+        const url = `https://backend.wplace.live/leaderboard/region/${modeOpts.period}/${id}`;
+        logInfo(`fetching ${chalk.bold(modeOpts.period)} places \n` + chalk.gray(`from: ${url}`));
 
         let places: PlaceRaw[];
         while (true) {
@@ -89,6 +90,9 @@ export async function saveGrabbyByRegion(modeOpts: GrabbyByRegionOpts, generalOp
     }
 
     const archivePlace = async (args: {
+        getTileWriteFilepath: FnGetTileWriteFilepath,
+        getErrorWriteFilepath: FnGetErrorWriteFilepath,
+        markFilepathWritten: FnMarkFilepathWritten,
         countryName: string,
         countryFlag: string,
         countryIndex: number,
@@ -98,51 +102,63 @@ export async function saveGrabbyByRegion(modeOpts: GrabbyByRegionOpts, generalOp
         place: Place
     }) => {
         const shareUrl = `https://wplace.live/?lat=${args.place.lastLatitude}&lng=${args.place.lastLongitude}&zoom=11`;
-        logInfo(`[country ${args.countryIndex + 1} of ${args.countriesTotal}] [place ${args.placeIndex + 1} of ${args.placesTotal}] fetching place: ${chalk.bold(args.place.name)} (${applyNumberUnitSuffix(args.place.pixelsPainted)} pixels) \nwplace url: ${shareUrl}`);
+        logInfo(`[country ${args.countryIndex + 1} of ${args.countriesTotal}] [place ${args.placeIndex + 1} of ${args.placesTotal}] fetching place: ${chalk.bold(args.place.name)} (${applyNumberUnitSuffix(args.place.pixelsPainted)} pixels) in country ${chalk.bold(args.countryFlag + ' ' + args.countryName)} \n` + chalk.gray(`wplace url: ${shareUrl}`));
 
-        const grabbyWorkdir = path.join(
-            generalOpts.out,
-            modeOpts.placeOutDirpath
-                .replaceAll('%period', modeOpts.period)
-                .replaceAll('%country_flag', args.countryFlag)
-                .replaceAll('%country', args.countryName)
-                .replaceAll('%place_number', args.place.number.toString())
-                .replaceAll('%place', sanitizeFilename(args.place.name))
-        );
-        await saveGrabby({
+        const out = args.getTileWriteFilepath(args.place.tilePos)
+        // attempt doesn't matter here, since we don't substitute attempt variable.
+        const errOut = args.getErrorWriteFilepath(args.place.tilePos, -1)
+
+        const saveGrabbyRes = await saveGrabby({
             ...modeOpts,
             startingTile: args.place.tilePos,
-            out: modeOpts.fromPlaceOutDirpath
         }, {
             ...generalOpts,
-            out: grabbyWorkdir,
-            cycleStartDelay: 1
+            out,
+            errOut,
+            // use 0 because the delay is applied to parent cycler
+            cycleStartDelay: 0
+        }, {
+            extraPreStageVarSubstitutions: {
+                // mode specific
+                '%category': 'by-region',
+                '%period': modeOpts.period,
+                '%country_flag': args.countryFlag,
+                '%country': args.countryName,
+                '%place': sanitizeFilename(args.place.name),
+                '%place_number': args.place.number.toString(),
+            }
         });
+
+        // propagate written paths to cycler for this mode
+        saveGrabbyRes.postWrittenTileImagePaths.forEach(filePath => args.markFilepathWritten(filePath, true));
+        saveGrabbyRes.postWrittenErrorPaths.forEach(filePath => args.markFilepathWritten(filePath, false));
     }
 
-    const cycler = new Cycler({
-        workingDir: generalOpts.out,
-        cycleStartDelayMs: generalOpts.cycleStartDelay,
+    await new Cycler()
+        .startDelay(generalOpts.cycleStartDelay)
+        .outputFilepath(generalOpts.out, generalOpts.errOut, {
+            pre({ pattern, cycleStarted }) {
+                return substituteOutVariables(pattern, {
+                    '%leaderboard_date': formatDateToFsSafeIsolike(cycleStarted),
+                });
+            },
 
-        cycleDirpathPreFormatter(timeStart) {
-            return `grabs-by-region-archival-log/${formatDateToFsSafeIsolike(timeStart)}-%duration`;
-        },
+            cycle({ pattern, cycleStarted, preStageFmtedFilepath, tilePos, attemptIndex }) {
+                return substituteOutVariables(preStageFmtedFilepath, {
+                });
+            },
 
-        cycleDirpathPostFormatter({
-            timeEnd,
-            previousCycleFmtedDirpath,
-            elapsedMs
-        }) {
-            return previousCycleFmtedDirpath.replaceAll('%duration', formatMsToDurationDirnamePart(elapsedMs));
-        },
-
-        async cycle({
-            workingDir,
-            outDirpath,
-            errorsDirpath,
-            writeTile,
-            writeError,
-        }) {
+            post({ writtenPath, cycleStarted, cycleFinished: cycleEnded, cycleElapsedMs }) {
+                return substituteOutVariables(writtenPath, {
+                    '%leaderboard_duration': formatMsToDurationDirnamePart(cycleElapsedMs)
+                });
+            }
+        })
+        .cycle(async ({
+            getTileWriteFilepath,
+            getErrorWriteFilepath,
+            markFilepathWritten
+        }) => {
             for (const [countryI, countryObj] of countries.entries()) {
                 const countryWithFlag = `${countryObj.flag} ${countryObj.country}`;
                 logInfo(`fetching country: ${chalk.bold(countryWithFlag)}`);
@@ -150,6 +166,9 @@ export async function saveGrabbyByRegion(modeOpts: GrabbyByRegionOpts, generalOp
                 const places = await fetchCountryPlaces(countryObj.index);
                 for (const [placeI, place] of places.entries()) {
                     await archivePlace({
+                        getTileWriteFilepath,
+                        getErrorWriteFilepath,
+                        markFilepathWritten,
                         countryName: countryObj.country,
                         countryFlag: countryObj.flag,
                         place,
@@ -160,10 +179,8 @@ export async function saveGrabbyByRegion(modeOpts: GrabbyByRegionOpts, generalOp
                     });
                 }
             }
-        }
-    });
-
-    await cycler.start(generalOpts.loop);
+        })
+        .start()
 }
 
 function unrawPlace(place: PlaceRaw): Place {
