@@ -2,16 +2,15 @@ import { Logger } from '$utils/logger'
 import type { Place } from '$src/types'
 import chalk from 'chalk'
 import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$src/lib/formatters'
-import { Cycler, type FnCycle, type FnGetErrorWriteFilepath, type FnGetTileWriteFilepath, type FnMarkFilepathWritten } from '$lib/Cycler'
+import { Cycler, type FnGetErrorWriteFilepath, type FnGetTileWriteFilepath, type FnMarkFilepathWritten } from '$lib/Cycler'
 import { TilePosition } from '$lib/TilePosition'
 import { err, ok } from 'neverthrow'
 import { countries } from '$lib/countries'
 import { z } from 'zod'
 import sanitizeFilename from 'sanitize-filename'
 import { saveGrabby } from '$src/saveGrabby'
-import path from 'path'
 import { isRetryableResponse } from '$lib/network'
-import type { GrabbyByRegionOpts, GeneralOpts, OutVariableWeakMap } from '$cli/types'
+import type { GrabbyByRegionOpts, GeneralOpts } from '$cli/types'
 const modeLogger = new Logger("grabby leaderboard by-region");
 const { logInfo, logError, logWarn, logFatal } = modeLogger;
 
@@ -93,6 +92,7 @@ export async function saveGrabbyLeaderboardsByRegion(modeOpts: GrabbyByRegionOpt
         getTileWriteFilepath: FnGetTileWriteFilepath,
         getErrorWriteFilepath: FnGetErrorWriteFilepath,
         markFilepathWritten: FnMarkFilepathWritten,
+        tileToTileImageFilepathMap: Map<string, string>,
         countryName: string,
         countryFlag: string,
         countryIndex: number,
@@ -126,12 +126,16 @@ export async function saveGrabbyLeaderboardsByRegion(modeOpts: GrabbyByRegionOpt
                 '%country': args.countryName,
                 '%place': sanitizeFilename(args.place.name),
                 '%place_number': args.place.number.toString(),
-            }
+            },
+            tileToTileImageFilepathMap: modeOpts.reuseTiles ? args.tileToTileImageFilepathMap : undefined
         });
 
         // propagate written paths to cycler for this mode
         saveGrabbyRes.postWrittenTileImagePaths.forEach(filePath => args.markFilepathWritten(filePath, true));
         saveGrabbyRes.postWrittenErrorPaths.forEach(filePath => args.markFilepathWritten(filePath, false));
+
+        if (modeOpts.reuseTiles)
+            saveGrabbyRes.writtenTileToTileImageFilepathMap.forEach((value, key) => args.tileToTileImageFilepathMap.set(key, value));
     }
 
     await new Cycler()
@@ -159,6 +163,8 @@ export async function saveGrabbyLeaderboardsByRegion(modeOpts: GrabbyByRegionOpt
             getErrorWriteFilepath,
             markFilepathWritten
         }) => {
+            const tileToTileImageFilepathMap = new Map<string, string>();
+
             for (const [countryI, countryObj] of countries.entries()) {
                 const countryWithFlag = `${countryObj.flag} ${countryObj.country}`;
                 logInfo(`fetching country: ${chalk.bold(countryWithFlag)}`);
@@ -169,6 +175,7 @@ export async function saveGrabbyLeaderboardsByRegion(modeOpts: GrabbyByRegionOpt
                         getTileWriteFilepath,
                         getErrorWriteFilepath,
                         markFilepathWritten,
+                        tileToTileImageFilepathMap,
                         countryName: countryObj.country,
                         countryFlag: countryObj.flag,
                         place,
@@ -186,22 +193,6 @@ export async function saveGrabbyLeaderboardsByRegion(modeOpts: GrabbyByRegionOpt
 function unrawPlace(place: PlaceRaw): Place {
     return {
         ...place,
-        tilePos: new TilePosition(
-            lon2tile(place.lastLongitude, 11),
-            lat2tile(place.lastLatitude, 11),
-        )
+        tilePos: TilePosition.fromLatLon(place.lastLatitude, place.lastLongitude)
     }
-}
-
-// converters from https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames#Common_programming_languages
-
-function lon2tile(lon: number, zoom: number): number { return (Math.floor((lon + 180) / 360 * Math.pow(2, zoom))); }
-function lat2tile(lat: number, zoom: number): number { return (Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom))); }
-
-function tile2long(x: number, z: number): number {
-    return (x / Math.pow(2, z) * 360 - 180);
-}
-function tile2lat(y: number, z: number): number {
-    var n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
-    return (180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n))));
 }

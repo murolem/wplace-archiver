@@ -41,12 +41,40 @@ export function parseOutPathsIntermediate(args: {
     }
 }
 
+/** Attempts to parse tile position from a serialized tile position. */
 export function parseTilePosition(value: string): TilePosition {
     try {
         return TilePosition.fromString(value);
     } catch (err) {
         program.error(`failed to parse tile position: expected an integer pair X,Y in range 0-2047; got: ${value}`);
     }
+}
+
+/** Attempts to parse tile position from a string, which could be:
+- Tile position as 'X,Y', like '1270,801' (Tahrawa, Iraq).
+- Latitude (vertical) and longitude (horizontal) and  as 'LAT,LON', like '35.0074863,135.7885488' (Kioto, Japan).
+- WPlace place share link like 'https://wplace.live/?lat=-34.67000883965724&lng=-58.43170931572267&zoom=11.226476250486172' (Buenos Aires, Argentina)
+*/
+export function parseTilePositionLike(value: string): TilePosition {
+    let res = TilePosition.tryFromString(value);
+    if (res)
+        return res;
+
+    res = TilePosition.tryFromLatLonStr(value);
+    if (res)
+        return res;
+
+    try {
+        const url = new URL(value);
+        const params = new URLSearchParams(url.search);
+        const lat = params.get("lat");
+        const lon = params.get("lng");
+        if (lon && lat) {
+            return TilePosition.fromLatLon(parseFloat(lat), parseFloat(lon));
+        }
+    } catch (err) { }
+
+    program.error(`failed to parse tile position-like: no matching format found for string: '${value}'`);
 }
 
 export function parseSizeOption(value: string): Size {

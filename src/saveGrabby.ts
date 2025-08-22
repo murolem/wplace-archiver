@@ -11,18 +11,21 @@ import { TilePosition } from '$lib/TilePosition'
 import { err, ok, type Result } from 'neverthrow'
 import PQueue from 'p-queue'
 import { SigintConfirm } from '$utils/sigintConfirm'
-import { noop } from '$utils/noop'
 import type { GrabbyOpts, GeneralOpts, OutVariableWeakMap } from '$cli/types'
+import fs from 'fs-extra';
 const modeLogger = new Logger("grabby");
 const { logInfo, logError, logWarn } = modeLogger;
 
 export async function saveGrabby(
     modeOpts: GrabbyOpts,
     generalOpts: GeneralOpts,
-    internalOpts?: {
+    internalOpts?: Partial<{
         /** Extra variable substitution to perform on pre cycle. */
-        extraPreStageVarSubstitutions: OutVariableWeakMap
-    }) {
+        extraPreStageVarSubstitutions: OutVariableWeakMap,
+
+        /** A tile to tile image filepath map. Allows to not fetch tiles specified here, instead reusing them. */
+        tileToTileImageFilepathMap: Map<string, string>
+    }>) {
     const tileQueue = new TileFetchQueue({
         requestsPerSecond: generalOpts.requestsPerSecond,
         requestConcurrency: generalOpts.requestConcurrency
@@ -50,6 +53,7 @@ export async function saveGrabby(
     /** external variable to hold written paths. this is just a hacky way so that we could return them. */
     const postWrittenTileImagePaths = new Set<string>();
     const postWrittenErrorPaths = new Set<string>();
+    const writtenTileToTileImageFilepathMap = new Map<string, string>();
 
     await new Cycler()
         .loop(generalOpts.loop)
@@ -204,17 +208,30 @@ export async function saveGrabby(
 
                 logInfo(`processing offset ${chalk.bold("X" + tilePosOffset.x)} ${chalk.bold("Y" + tilePosOffset.y)}`);
 
-                const tileRes = await tileQueue.enqueue(
-                    tilePos,
-                    writeError
-                )
-
-                if (tileRes.isErr()) {
-                    markTilePosComplete(tilePos);
-                    return;
+                let tileImage: TileImage | null = null;
+                const existingTileFilepath = internalOpts?.tileToTileImageFilepathMap?.get(tilePos.toString());
+                if (existingTileFilepath) {
+                    logInfo(chalk.gray("♻️ reusing tile"));
+                    if (await fs.exists(existingTileFilepath)) {
+                        tileImage = (await fs.readFile(existingTileFilepath)).buffer;
+                    }
                 }
 
-                const tileImage = tileRes.value;
+                if (!tileImage) {
+                    const tileRes = await tileQueue.enqueue(
+                        tilePos,
+                        writeError
+                    )
+
+                    if (tileRes.isErr()) {
+                        markTilePosComplete(tilePos);
+                        return;
+                    }
+
+                    tileImage = tileRes.value;
+                    writtenTileToTileImageFilepathMap.set(tilePos.toString(), getTileWriteFilepath(tilePos));
+                }
+
                 await writeTile(tilePos, tileImage);
                 tilesSaved++;
 
@@ -242,7 +259,7 @@ export async function saveGrabby(
                 if (sigintConfirm.inSigintMode) {
                     tileQueue.pause();
                     processingQueue.pause();
-                    await sigintConfirm.sigintPromise;
+                    await sigintConfirm.sigintCancelPromise;
                     tileQueue.start();
                     processingQueue.start();
                 }
@@ -253,11 +270,10 @@ export async function saveGrabby(
                     continue;
                 }
 
-                // prevents constant useless scheduling
-                await wait(1000 / generalOpts.requestConcurrency);
+                // a small delay to prevent constant scheduling when there are no more tasks to fill the queue with
+                await wait(1000 / (generalOpts.requestConcurrency * 5));
 
-                await processingQueue.onSizeLessThan(generalOpts.requestConcurrency);
-
+                await processingQueue.onSizeLessThan(generalOpts.requestConcurrency + 5);
                 processingQueue.add(task);
             }
 
@@ -270,7 +286,8 @@ export async function saveGrabby(
 
     return {
         postWrittenTileImagePaths,
-        postWrittenErrorPaths
+        postWrittenErrorPaths,
+        writtenTileToTileImageFilepathMap
     }
 }
 
