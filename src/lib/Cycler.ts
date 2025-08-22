@@ -245,8 +245,7 @@ export class Cycler {
             const writeError: FnWriteError = async (tilePos, attemptIndex, error) => {
                 const filepath = getErrorWriteFilepath(tilePos, attemptIndex);
                 if (!filepath)
-                    logFatalAndThrow("failed to write error: error filepath not defined");
-
+                    return;
 
                 await fs.ensureFile(filepath!);
                 await fs.writeFile(filepath!, error);
