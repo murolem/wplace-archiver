@@ -25,11 +25,11 @@
     "zod": "^4.0.17"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/fs-extra": "^11.0.4",
     "@types/humanize-duration": "^3.27.4",
     "@types/victor": "^1.1.5",
-    "typescript": "~5.8.3",
-    "@types/bun": "latest"
+    "typescript": "~5.8.3"
   },
   "bin": {
     "app": "src/cli/index.ts"

@@ -155,6 +155,7 @@ export class TileFetchQueue {
                 abortCtrl.abort("timeout");
                 logError("request aborted (timeout)")
             }, this._timeoutMs);
+
             const responseRes = await fetch(url, {
                 "headers": {
                     "Accept": "image/webp,*/*",

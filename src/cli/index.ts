@@ -98,7 +98,7 @@ ${defaultErrOutModeGrabbyLeaderboardByRegion}
 
 `, parseOutPath)
     .option("--no-error-out", "Disabled error writing to disk.", false)
-    .option("--rps, --requests-per-second <number>", "Requests per second. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", getIntRangeParser(1, Infinity), 5)
+    .option("--rps, --requests-per-second <number>", "Requests per second. Higher value could cause Too Many Requests errors, significantly lowering the RPS.", getIntRangeParser(1, Infinity), 4)
     .option("--rc, --request-concurrency <number>", "Request concurrency. How many requests are allowed to run in parallel? Higher value could cause Too Many Requests errors, significantly lowering RPS.", getIntRangeParser(1, Infinity), 2)
     .option("-l, --loop", "Run archiving continuously? Once archival is complete, it will run again. Saving path may be altered - see each mode for details.", false)
     .option("--cycle-start-delay <seconds>", "Delay before starting an archival cycle.", getIntRangeParser(0, Infinity), 3)
@@ -231,6 +231,7 @@ program.command("grabby")
         .conflicts(arrayToCopiedExcludingEntry(grabbyLeaderboardPeriodsOptions as any as string[], 'all-time'))
         .default(false)
     )
+    .option("--no-reuse-tiles", "If set, no tiles will be reused for leaderboard mode. By default, instead of fetching duplicate tiles when grabby overlaps due to small distance between places, matching tiles that are already fetched are reused. Side effect of this is if archival takes a long time, some tiles might end up pretty old.")
     .action(async (xy, opts) => {
         if (opts.leaderboards) {
             if (!opts.byRegion)
@@ -259,7 +260,8 @@ program.command("grabby")
                 period,
                 pixelThreshold: opts.pixelThreshold,
                 tileTolerance: opts.tileTolerance,
-                radius: opts.radius
+                radius: opts.radius,
+                reuseTiles: opts.reuseTiles
             }, generalOptsRes);
         } else {
             if (!xy)

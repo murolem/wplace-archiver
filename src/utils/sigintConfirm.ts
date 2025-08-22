@@ -8,8 +8,8 @@ const logger = new Logger("confirm");
 let instance: SigintConfirm | null = null;
 
 export class SigintConfirm {
-    get sigintPromise() { return this._sigintPromise; }
-    private _sigintPromise: DeferredPromise<void> = new DeferredPromise();
+    get sigintCancelPromise() { return this._sigintCancelPromise; }
+    private _sigintCancelPromise: DeferredPromise<void> = new DeferredPromise();
 
     get inSigintMode() { return this._inSigintMode; }
     private _inSigintMode: boolean = false;
@@ -22,8 +22,8 @@ export class SigintConfirm {
 
         let logLevelBeforeSigint = Logger.getLogLevel();
         const replaceSigintPromiseCb = () => {
-            this._sigintPromise = new DeferredPromise();
-            this._sigintPromise.then(replaceSigintPromiseCb);
+            this._sigintCancelPromise = new DeferredPromise();
+            this._sigintCancelPromise.then(replaceSigintPromiseCb);
         };
         replaceSigintPromiseCb();
 
@@ -46,7 +46,7 @@ export class SigintConfirm {
                     this._inSigintMode = false;
                     logger.log('SIGINT', `Resuming.`);
                     Logger.setLogLevel(logLevelBeforeSigint);
-                    this._sigintPromise.resolve();
+                    this._sigintCancelPromise.resolve();
                 } else if (lastStdinKeypress !== null && shallowCompareObjects(keypress, lastStdinKeypress)) {
                     process.exit();
                 }

@@ -25,7 +25,8 @@ export type GrabbyByRegionOpts = {
     pixelThreshold: number,
     tileTolerance: number,
     radius: number,
-    period: 'today' | 'week' | 'month' | 'all-time'
+    period: 'today' | 'week' | 'month' | 'all-time',
+    reuseTiles: boolean
 }
 
 /**
