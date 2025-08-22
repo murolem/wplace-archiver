@@ -17,7 +17,7 @@ export function formatMsToDurationDirnamePart(ms: number): string {
         `${mins}m`,
     ].filter(val => val !== "");
 
-    return parts.join(" ");
+    return parts.join("");
 }
 
 export function formatDateToFsSafeIsolike(date: Date): string {
