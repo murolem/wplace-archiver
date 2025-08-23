@@ -1,4 +1,5 @@
 import { clamp } from '$utils/clamp';
+import { Response as ResponseUndici } from 'undici';
 
 export function getExpDelayCalculator(config: {
     startingDelayMs: number,
@@ -15,7 +16,7 @@ export function getExpDelayCalculator(config: {
     }
 }
 
-export async function tryGetResponseBodyAsText(response: Response): Promise<string | null> {
+export async function tryGetResponseBodyAsText(response: Response | ResponseUndici): Promise<string | null> {
     return await response.text()
         .catch(err => null);
 }
@@ -31,6 +32,6 @@ export function isRetryableStatus(status: number): boolean {
     }
 }
 
-export function isRetryableResponse(response: Response): boolean {
+export function isRetryableResponse(response: Response | ResponseUndici): boolean {
     return isRetryableStatus(response.status);
 }

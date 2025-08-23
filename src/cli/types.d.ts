@@ -7,7 +7,8 @@ export type GeneralOpts = {
     requestsPerSecond: number,
     requestConcurrency: number,
     /** cycle start delay in seconds */
-    cycleStartDelay: number
+    cycleStartDelay: number,
+    freebind?: string
 }
 
 export type RegionOpts = {

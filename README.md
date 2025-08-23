@@ -157,6 +157,38 @@ Defaults should work as is, without getting rate limited. The server has pretty 
 -   To change the requests per second limit, use `--rps` option.
 -   To change the amount of simultaneous requests, use `--rc` option.
 
+### Freebind
+
+Currently, WPlace has **no rate limiting on ipv6 addresses within a subnet**. This could be used to archive the entire map in **hours or even minutes**, granted an ipv6 subnet is available for use and a random IP from that subnet is used for each request. [freebind.js](https://www.npmjs.com/package/freebind) is used for this purpose.
+
+**Note: Due to limitations of Bun, it is not possible to use Freebind in built binary nor with Bun as a runtime. Meaning it is only possible to use it while in development and using Node.**
+
+**Note 2: Freebind is only supported on Linux.**
+
+To get a free ipv6 subnet, visit [Hurricane Electric](http://he.net). They give out free ipv6 /64 tunnels, along with setup instructions.
+
+To setup with Node instead of Bun, delete `node_modules` (if installed) and run:
+```
+npm i
+```
+
+To use Node, run commands with `npm run start:freebind --` instead of `./wplace_archiver` or `npm start --`.
+
+In order to make use of freebinding, you first need to configure the Linux AnyIP kernel feature in order to be able to bind a socket to an arbitrary IP address from this subnet as follows:
+```
+ip -6 route add local <subnet> dev lo
+```
+
+To enable Freebind, use: `--freebind <ipv6_subnet>`. This will pregenerate a bunch of agents using random IPs from the subnet and use them sequentually for all requests. 
+Since agents are reused, it is still possible to get rate limited on individual IPs.
+
+To control RPS per individual IP, use `--server-rps-limit <rps>`.
+
+Example command to archive the entire map and no error file output:
+```bash
+npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-error-out --freebind 2a00:1450:4001:81b::/64
+```
+
 ## Developing
 
 ### Setup

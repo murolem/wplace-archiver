@@ -9,6 +9,7 @@
     "chalk": "^5.5.0",
     "commander": "^14.0.0",
     "fetch-retry": "^6.0.0",
+    "freebind": "^0.2.2",
     "fs-extra": "^11.3.1",
     "humanize-duration": "^3.33.0",
     "humanize-number": "^0.0.2",
@@ -16,11 +17,11 @@
     "jimp": "^1.6.0",
     "markdown-table": "^3.0.4",
     "neverthrow": "^8.2.0",
-    "node-fetch": "^3.3.2",
     "p-queue": "^8.1.0",
     "pkg": "^5.8.1",
     "sanitize-filename": "^1.6.3",
     "tsx": "^4.20.3",
+    "undici": "^7.15.0",
     "victor": "^1.1.0",
     "zod": "^4.0.17"
   },
@@ -41,6 +42,7 @@
   "private": true,
   "scripts": {
     "start": "bun src/cli/index.ts",
+    "start:freebind": "tsx src/cli/index.ts",
     "build": "tsc && bun run build:linux-x64 && bun run build:windows-x64",
     "build:linux-x64": "bun run build:base -- --target=bun-linux-x64",
     "build:windows-x64": "bun run build:base -- --target=bun-windows-x64",

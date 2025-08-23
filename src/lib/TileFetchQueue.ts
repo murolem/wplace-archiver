@@ -3,7 +3,6 @@ import { getExpDelayCalculator, isRetryableResponse, tryGetResponseBodyAsText } 
 import { stringifyErr } from '$lib/result';
 import { stringify } from '$lib/stringify';
 import { Logger } from '$utils/logger';
-import { maxRetryAfterMs } from '$src/constants';
 import type { TileImage } from '$src/types';
 import { wait } from '$utils/wait';
 import chalk from 'chalk';
@@ -12,6 +11,8 @@ import PQueue from 'p-queue';
 import humanizeDuration from 'humanize-duration';
 import type { TilePosition } from '$lib/TilePosition';
 import type { FnWriteError } from '$lib/Cycler';
+import { fetch, Agent } from 'undici';
+const { logFatalAndThrow } = new Logger("tile-fetch-queue");
 
 type EnqueueTaskResult = Result<
     TileImage,
@@ -47,17 +48,23 @@ export class TileFetchQueue {
     private _targetQueueSize: number;
     private _getRetryDelay: ReturnType<typeof getExpDelayCalculator>;
     private _timeoutMs: number;
+    private _freebindIpv6Subnet: string | null;
+    private _serverRpsLimit: number | null;
+    private _rps: number;
+    private _dispatchers: Agent[] = [];
+    private _dispatcherIndexUncapped: number = 0;
 
     constructor(args: {
         requestsPerSecond: number,
         requestConcurrency: number,
-        targetQueueSize?: number
+        targetQueueSize?: number,
+        freebind?: string,
+        serverRpsLimit?: number
     }) {
         args.targetQueueSize ??= 5;
 
         this._queue = new PQueue({ concurrency: args.requestConcurrency, interval: 1000 /** do not change */, intervalCap: args.requestsPerSecond });
         this._targetQueueSize = args.targetQueueSize;
-
 
         const maxRetryDelayMs = 4 * 1000;
         this._getRetryDelay = getExpDelayCalculator({
@@ -67,6 +74,9 @@ export class TileFetchQueue {
         });
 
         this._timeoutMs = maxRetryDelayMs + 2 * 1000;
+        this._rps = args.requestsPerSecond;
+        this._freebindIpv6Subnet = args.freebind ?? null;
+        this._serverRpsLimit = args.serverRpsLimit ?? null;
     }
 
     get isPaused(): boolean {
@@ -92,6 +102,8 @@ export class TileFetchQueue {
     async enqueue(...args: Parameters<EnqueueManyFn>): ReturnType<EnqueueManyFn>;
 
     async enqueue(...args: Parameters<EnqueueSingleFn> | Parameters<EnqueueManyFn>): Promise<Awaited<ReturnType<EnqueueSingleFn> | ReturnType<EnqueueManyFn>>> {
+        await this._setupFreebindIfNeeded();
+
         if (typeof args[0] === 'function') {
             const [tilePosGenerator, writeError, cbTile, getProgress] = args as Parameters<EnqueueManyFn>;
 
@@ -159,9 +171,12 @@ export class TileFetchQueue {
             const responseRes = await fetch(url, {
                 "headers": {
                     "Accept": "image/webp,*/*",
-                    "Accept-Language": "en-US,en;q=0.5",
+                    "Accept-Language": "en-US,en;q=0.5"
                 },
-                signal: abortCtrl.signal
+                signal: abortCtrl.signal,
+                dispatcher: this._freebindIpv6Subnet
+                    ? this._dispatchers[this._dispatcherIndexUncapped++ % this._dispatchers.length]
+                    : undefined
             })
                 .then(res => ok(res))
                 .catch(error => {
@@ -178,7 +193,6 @@ export class TileFetchQueue {
 
             const res = responseRes.value;
             if (!res.ok) {
-                const resStatusStr = res.status.toString();
                 if (res.status === 404) {
                     logInfo(chalk.gray(`tile doesn't exist, skipping`));
                     return err({ type: 'unrecoverable' });
@@ -261,5 +275,23 @@ export class TileFetchQueue {
         this._queue.pause();
         await wait(durationMs);
         this._queue.start();
+    }
+
+    private async _setupFreebindIfNeeded() {
+        if (this._freebindIpv6Subnet && this._dispatchers.length === 0) {
+            if (!this._serverRpsLimit)
+                logFatalAndThrow("freebind is enabled, but no server RPS limit is set");
+
+            const dispatchersToCreate = Math.ceil(this._rps / this._serverRpsLimit!);
+            // @ts-ignore no types
+            const randomDispatcher = (await import('freebind')).randomDispatcher;
+            for (let i = 0; i < dispatchersToCreate; i++) {
+                this._dispatchers.push(
+                    randomDispatcher(this._freebindIpv6Subnet, {
+                        keepAliveTimeout: 1
+                    })
+                )
+            }
+        }
     }
 }

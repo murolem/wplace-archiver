@@ -27,10 +27,13 @@ export async function saveGrabby(
         tileToTileImageFilepathMap: Map<string, string>
     }>) {
     const tileQueue = new TileFetchQueue({
-        requestsPerSecond: generalOpts.requestsPerSecond,
-        requestConcurrency: generalOpts.requestConcurrency
+        ...generalOpts,
     });
-    const processingQueue = new PQueue({ concurrency: generalOpts.requestConcurrency, interval: 1000 /** do not change */, intervalCap: generalOpts.requestsPerSecond });
+    const processingQueue = new PQueue({
+        concurrency: generalOpts.requestConcurrency,
+        interval: 1000 /** do not change */,
+        intervalCap: generalOpts.requestsPerSecond
+    });
 
     logInfo(chalk.gray("generating discovery offsets"));
     /** Position offsets for tile discovery. */

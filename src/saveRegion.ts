@@ -28,8 +28,7 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
     // =======
 
     const tileQueue = new TileFetchQueue({
-        requestsPerSecond: generalOpts.requestsPerSecond,
-        requestConcurrency: generalOpts.requestConcurrency
+        ...generalOpts
     });
 
     const region = modeOpts.region;

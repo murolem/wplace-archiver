@@ -4,12 +4,9 @@ import { saveRegion, type Region } from '$src/saveRegion';
 import type { Size } from '$src/types';
 import { Option, program } from '@commander-js/extra-typings';
 import { saveGrabbyLeaderboardsByRegion } from '$src/saveGrabbyLeaderboardsByRegion';
-import { markdownTable } from 'markdown-table';
-import { getFloatRangeParser, getIntRangeParser, parseOutPath, parseOutPathsIntermediate, parseSizeOption, parseTilePixelCount, parseTilePosition, parseTilePositionLike } from '$cli/parsers';
+import { getFloatRangeParser, getIntRangeParser, parseOutPath, parseOutPathsIntermediate, parseSizeOption, parseTilePixelCount, parseTilePositionLike } from '$cli/parsers';
 import { arrayToCopiedExcludingEntry } from '$utils/arrayToCopiedExcludingEntry';
-import { defaultErrOutModeGrabby, defaultErrOutModeGrabbyLeaderboardByRegion, defaultErrOutModeRegion, defaultOutModeGrabby, defaultOutModeGrabbyLeaderboardByRegion, defaultOutModeRegion, leaderboardPeriods } from '$cli/constants';
-import chalk from 'chalk';
-import { variableName as vn } from '$cli/utils';
+import { defaultErrOutModeGrabby, defaultErrOutModeGrabbyLeaderboardByRegion, defaultErrOutModeRegion, defaultOutModeGrabby, defaultOutModeGrabbyLeaderboardByRegion, defaultOutModeRegion } from '$cli/constants';
 import type { GeneralOpts } from '$cli/types';
 import { outErrorPathHelp, outPathHelp, positionHelpPartFormats } from '$cli/docs';
 
@@ -23,6 +20,8 @@ const generalOpts = program
     .option("--rc, --request-concurrency <number>", "Request concurrency. How many requests are allowed to run in parallel? Higher value could cause Too Many Requests errors, significantly lowering RPS.", getIntRangeParser(1, Infinity), 2)
     .option("-l, --loop", "Run archiving continuously? Once archival is complete, it will run again. Saving path may be altered - see each mode for details.", false)
     .option("--cycle-start-delay <seconds>", "Delay before starting an archival cycle.", getIntRangeParser(0, Infinity), 3)
+    .option("--freebind <subnet>", "[DELEOPMENT ONLY] Enables freebind with specified ipv6 subnet. Only works in development (will NOT work in CLI binary). Agents are pregenerated and reused; number of agents and reuse frequency are dependant on RPS and server RPS limit options. Requires additional setup - see README for details.")
+    .option("--server-rps-limit <rps>", "[DELEOPMENT ONLY] Required for --freebind. Sets limit on amount of requests that the WPlace server can accept without getting rate limited. It's highly recommended to NOT go over the server rate limit, otherwise archival will stall.", getIntRangeParser(1, Infinity), 4)
     .opts();
 
 const regionSubcommands = ["size", "to", "radius"];
