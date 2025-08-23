@@ -7,7 +7,7 @@ import path from 'path';
 import { z } from 'zod';
 import { semverSchema } from '$tasks/utils/schema';
 import { editor as promptEditor } from '@inquirer/prompts';
-const { logDebug, logInfo, logFatalAndThrow } = new Logger("task:build_and_upload");
+const { logDebug, logInfo, logError, logFatalAndThrow } = new Logger("task:build_and_upload");
 
 const programParsed = program
     .name("task:build_and_upload")
@@ -93,8 +93,16 @@ const releaseCreateRes = await spawn(`gh release create ${version}`, { args: ["-
 if (releaseCreateRes.isErr())
     logFatalAndThrow({ msg: `release creation failed failed`, data: releaseCreateRes.error });
 
-const uploadRes = await spawn(`gh release upload ${version}`, { args: artifacts });
-if (uploadRes.isErr())
-    logFatalAndThrow({ msg: `upload failed`, data: uploadRes.error });
+logInfo(`uploading artifacts`);
 
-logInfo(`✅ all done! \nrelease: https://github.com/murolem/wplace-archiver/releases/tag/${version}`);
+while (true) {
+    const uploadRes = await spawn(`gh release upload ${version}`, { args: artifacts });
+    if (uploadRes.isErr()) {
+        logError({ msg: `upload failed, retrying`, data: uploadRes.error });
+        continue;
+    }
+
+    break;
+}
+
+logInfo(`✅ all done! \nrelease: ` + chalk.bold(`https://github.com/murolem/wplace-archiver/releases/tag/${version}`));
