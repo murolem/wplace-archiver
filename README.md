@@ -15,7 +15,7 @@ Grab a binary from [releases](https://github.com/murolem/wplace-archiver/release
 To run:
 
 ```bash
-./wplace_archiver [args] <mode> [mode args]
+./wplace-archiver [args] <mode> [mode args]
 ```
 
 where:
@@ -31,13 +31,13 @@ The script operates on **tiles**. A tile is a 1000x1000px image that holds pixel
 For help (to see available commands), run:
 
 ```bash
-./wplace_archiver help
+./wplace-archiver help
 ```
 
 To see commands for a specific mode, run:
 
 ```bash
-./wplace_archiver help [mode]
+./wplace-archiver help [mode]
 ```
 
 ## Positions
@@ -68,12 +68,12 @@ A grabby mode that allows to archive leaderboards.
 -   Leaderboard category is toggled by `--by-<category>`. Currently only `--by-region` is available.
 -   Available periods: `--today`, `--week`, `--month`, `--all-time`.
 
-Example (regions, all time): `./wplace_archiver grabby --leaderboard --by-region --all-time`.
+Example (regions, all time): `./wplace-archiver grabby --leaderboard --by-region --all-time`.
 
 To get help on this mode (see available commands), run:
 
 ```bash
-./wplace_archiver help grabby
+./wplace-archiver help grabby
 ```
 
 ### Grabby
@@ -83,15 +83,15 @@ Code: `grabby`
 Grabs tiles around starting tile until there are no more tiles to grab within a radius. The grab radius is also configurable, as well as minimum amount of pixels in a tile. Best mode for archiving places, since it works on any configuration of tiles and doesn't get onto empty tiles much.
 
 ```bash
-./wplace_archiver grabby position [--radius <value>] [--pixel-threshold <amount>] [--tile-tolerance <radius>]
+./wplace-archiver grabby position [--radius <value>] [--pixel-threshold <amount>] [--tile-tolerance <radius>]
 ```
 
-For example, to archive the entirety of Moscow, run: `./wplace_archiver grabby "https://wplace.live/?lat=55.75110762714915&lng=37.61692349677732&zoom=11.591409617122986"`.
+For example, to archive the entirety of Moscow, run: `./wplace-archiver grabby "https://wplace.live/?lat=55.75110762714915&lng=37.61692349677732&zoom=11.591409617122986"`.
 
 To get help on this mode (see available commands), run:
 
 ```bash
-./wplace_archiver help grabby
+./wplace-archiver help grabby
 ```
 
 **Note:** if you want to go paint while archival in progress, press Ctrl+C to pause the archival and free bandwidth to the server. This should help tiles load. Pressing Enter will resume the process. Currently works only for this mode, and not in between runs.
@@ -105,31 +105,31 @@ Allows to save a rectangular region of the map.
 -   To save a region with upper left corner at `position`, width `width_tiles` and height `height_tiles`, run:
 
 ```bash
-./wplace_archiver region position --size width_tiles,height_tiles [--center]
+./wplace-archiver region position --size width_tiles,height_tiles [--center]
 ```
 
-Example: `./wplace_archiver region 570,710 --size 50,50`
+Example: `./wplace-archiver region 570,710 --size 50,50`
 
 -   To save a region with upper left corner at `position` and lower right corner at `tile_x2` and `tile_y2`, run:
 
 ```bash
-./wplace_archiver region position --to tile_x2,tile_y2
+./wplace-archiver region position --to tile_x2,tile_y2
 ```
 
-Example: `./wplace_archiver region 570,710 --to 600,750`
+Example: `./wplace-archiver region 570,710 --to 600,750`
 
 -   To save a region centered at `position` with radius `radius_tiles`, run:
 
 ```bash
-./wplace_archiver region position --radius radius_tiles
+./wplace-archiver region position --radius radius_tiles
 ```
 
-Example: `./wplace_archiver region 594,733 --radius 8`
+Example: `./wplace-archiver region 594,733 --radius 8`
 
 To get help on this mode (see available commands), run:
 
 ```bash
-./wplace_archiver help region
+./wplace-archiver help region
 ```
 
 #### Additional options
@@ -137,10 +137,10 @@ To get help on this mode (see available commands), run:
 To make the initial position a center of a region instead of the npm startupper left corner, pass `--center`.
 
 ```bash
-./wplace_archiver region position --size width_tiles,height_tiles --center
+./wplace-archiver region position --size width_tiles,height_tiles --center
 ```
 
-Example: `./wplace_archiver region 594,733 --size 20,40 --center`
+Example: `./wplace-archiver region 594,733 --size 20,40 --center`
 
 ## Continuous archival
 
@@ -148,7 +148,7 @@ Allows to run the archival continuously. Once once archival "cycle" is done, nex
 
 Can be enabled by passing `--loop`.
 
-Example: `./wplace_archiver grabby 1792,708 --loop`.
+Example: `./wplace-archiver grabby 1792,708 --loop`.
 
 ## Rate limiting
 
@@ -168,23 +168,26 @@ Currently, WPlace has **no rate limiting on ipv6 addresses within a subnet**. Th
 To get a free ipv6 subnet, visit [Hurricane Electric](http://he.net). They give out free ipv6 /64 tunnels, along with setup instructions.
 
 To setup with Node instead of Bun, delete `node_modules` (if installed) and run:
+
 ```
 npm i
 ```
 
-To use Node, run commands with `npm run start:freebind --` instead of `./wplace_archiver` or `npm start --`.
+To use Node, run commands with `npm run start:freebind --` instead of `./wplace-archiver` or `npm start --`.
 
 In order to make use of freebinding, you first need to configure the Linux AnyIP kernel feature in order to be able to bind a socket to an arbitrary IP address from this subnet as follows:
+
 ```
 ip -6 route add local <subnet> dev lo
 ```
 
-To enable Freebind, use: `--freebind <ipv6_subnet>`. This will pregenerate a bunch of agents using random IPs from the subnet and use them sequentually for all requests. 
+To enable Freebind, use: `--freebind <ipv6_subnet>`. This will pregenerate a bunch of agents using random IPs from the subnet and use them sequentually for all requests.
 Since agents are reused, it is still possible to get rate limited on individual IPs.
 
 To control RPS per individual IP, use `--server-rps-limit <rps>`.
 
 Example command to archive the entire map and no error file output:
+
 ```bash
 npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-error-out --freebind 2a00:1450:4001:81b::/64
 ```
@@ -209,7 +212,7 @@ Run with:
 bun start
 ```
 
-This is the equivalent to running `./wplace_archiver`.
+This is the equivalent to running `./wplace-archiver`.
 
 ### Building
 
