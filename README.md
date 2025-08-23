@@ -132,6 +132,11 @@ To get help on this mode (see available commands), run:
 ./wplace-archiver help region
 ```
 
+### World
+
+The only realistic way to archive the entire world is to use [#Freebind](#freebind) - see the section for details.
+
+
 #### Additional options
 
 To make the initial position a center of a region instead of the npm startupper left corner, pass `--center`.
@@ -192,6 +197,25 @@ Example command to archive the entire map and no error file output:
 npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-error-out --freebind 2a00:1450:4001:81b::/64
 ```
 
+## Archives uploaded to the archives repo
+
+Currently, only the [#World](#world) archives are being uploaded to [wplace-archives](https://github.com/murolem/wplace-archives).
+
+The archival and upload are running on my server via task `archive_map_and_upload` task, which utilized Freebind. What it does:
+1. launches the arhcival process.
+2. waits for it to finish.
+3. compresses archived results.
+4. creates a github release in the archives repo.
+5. uploads compressed archives.
+6. purges archive dir and compressed archives.
+7. repeats, if --loop is provided.
+
+To run:
+```bash
+npm run archive_map_and_upload <args>
+```
+
+
 ## Developing
 
 ### Setup
@@ -228,4 +252,11 @@ Build for current platform:
 
 ```bash
 bun run build:current
+```
+
+### Creating a release
+
+Releases are created via `build_and_upload` task. To run:
+```bash
+bun run build_and_upload <version>
 ```

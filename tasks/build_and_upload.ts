@@ -91,7 +91,7 @@ logInfo(`creating release ${chalk.bold(version)}`);
 
 const releaseCreateRes = await spawn(`gh release create ${version}`, { args: ["-t", version, "-n", notes] });
 if (releaseCreateRes.isErr())
-    logFatalAndThrow({ msg: `release creation failed failed`, data: releaseCreateRes.error });
+    logFatalAndThrow({ msg: `release creation failed`, data: releaseCreateRes.error });
 
 logInfo(`uploading artifacts`);
 

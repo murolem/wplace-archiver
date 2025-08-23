@@ -1,11 +1,10 @@
 {
-  "name": "vite-project",
+  "name": "wpplace-archiver",
   "version": "0.0.0",
   "dependencies": {
     "@commander-js/extra-typings": "^14.0.0",
     "@inquirer/confirm": "^5.1.14",
     "@inquirer/prompts": "^7.8.1",
-    "@types/is-valid-path": "^0.1.2",
     "chalk": "^5.5.0",
     "commander": "^14.0.0",
     "fetch-retry": "^6.0.0",
@@ -13,7 +12,6 @@
     "fs-extra": "^11.3.1",
     "humanize-duration": "^3.33.0",
     "humanize-number": "^0.0.2",
-    "is-valid-path": "^0.1.1",
     "jimp": "^1.6.0",
     "markdown-table": "^3.0.4",
     "neverthrow": "^8.2.0",
@@ -48,7 +46,8 @@
     "build:windows-x64": "bun run build:base -- --target=bun-windows-x64",
     "build:current": "bun run build:base",
     "build:base": "bun build  ./src/cli/index.ts --compile --minify --sourcemap --outfile \"dist/wplace_archiver\"",
-    "build_and_upload": "bun tasks/build_and_upload.ts"
+    "build_and_upload": "bun tasks/build_and_upload.ts",
+    "archive_map_and_upload": "tsx tasks/archive_map_and_upload"
   },
   "type": "module"
 }

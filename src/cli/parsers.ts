@@ -3,23 +3,24 @@ import { TilePosition } from '$lib/TilePosition';
 import { outVariableNames, outVariableRegex, type OutVariableName } from '$src/cli/constants';
 import type { Size } from '$src/types';
 import { program } from 'commander';
-import isValidPath from 'is-valid-path';
 import z from 'zod';
 
 export function parseOutPath(value: string): string {
-    // check if path is legal
-    if (!isValidPath(value))
-        program.error("failed to parse out path: path is invalid");
-
     // check validity of variables
     const vars = outVariableRegex.exec(value);
     if (!vars)
         return value;
 
-    // check that variables are known
+    // check that variables are known, and there's no duplicates
+    const varsSet = new Set<string>();
     for (const varname of vars) {
         if (!outVariableNames.includes(varname as any))
             program.error(`failed to parse out path: encountered unknown variable '${varname}'`);
+
+        if (varsSet.has(varname))
+            program.error(`failed to parse out path: encountered duplicate variable '${varname}'`)
+
+        varsSet.add(varname);
     }
 
     return value;

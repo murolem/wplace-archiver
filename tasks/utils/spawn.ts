@@ -6,8 +6,18 @@ export async function spawn(command: string, opts: Partial<{
     /** Disabled piping spawned process stdout to current process stdout. */
     noInheritStdout: boolean,
 
+    noReturnStdout: boolean,
+
+    pipeStdin: boolean,
+
     /** Same as argument array in original `spawn()`. Will be appended. */
-    args: string[]
+    args: string[],
+
+    env: Record<string, string>,
+
+    cwd: string,
+
+    processCreatedCb: (process: ReturnType<typeof nodeSpawn>) => void
 }> = {}) {
     const firstSpaceIdx = command.indexOf(" ");
     const commandMain = command.slice(0, (firstSpaceIdx === -1 ? undefined : firstSpaceIdx));
@@ -27,7 +37,17 @@ export async function spawn(command: string, opts: Partial<{
             ...parseArgsStringToArgv(argsStr),
             ...(opts.args ?? [])
         ], {
-            stdio: ["inherit", "pipe", "pipe"]
+            stdio: [
+                opts.pipeStdin ? "pipe" : "inherit",
+                "pipe",
+                "pipe"
+            ],
+            env: {
+                ...process.env,
+                FORCE_COLOR: "true",
+                ...(opts.env ?? {})
+            },
+            cwd: opts.cwd ?? process.cwd()
         })
             .on('exit', code => {
                 if (code === 0)
@@ -43,8 +63,12 @@ export async function spawn(command: string, opts: Partial<{
             .on('error', error => resolve(err({ reason: "error", error })));
 
         if (!opts.noInheritStdout)
-            spawnedProcess.stdout.pipe(process.stdout);
-        spawnedProcess.stdout.on('data', chunk => dataChunks.push(chunk));
-        spawnedProcess.stderr.pipe(process.stderr);
+            spawnedProcess.stdout?.pipe(process.stdout);
+        if (!opts.noReturnStdout)
+            spawnedProcess.stdout?.on('data', chunk => dataChunks.push(chunk));
+
+        spawnedProcess.stderr?.pipe(process.stderr);
+
+        opts.processCreatedCb?.(spawnedProcess);
     })
 }
