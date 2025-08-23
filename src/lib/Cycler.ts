@@ -2,14 +2,12 @@ import { Logger } from '$utils/logger';
 import humanizeDuration from 'humanize-duration';
 import fs from 'fs-extra';
 import chalk from 'chalk';
-import { number, z } from 'zod';
+import { z } from 'zod';
 import { countDown } from '$utils/countDown';
 import type { TilePosition } from '$lib/TilePosition';
-import type { OutVariableName } from '$cli/constants';
 import path from 'path';
-import { formatMsToDurationDirnamePart, substituteOutVariables } from '$lib/formatters';
-import { roundToDigit } from '$utils/roundToDigit';
-import { clamp } from '$utils/clamp';
+import { PathConverger } from '$utils/convergePaths';
+import { tryPurgeEmptyDirAndEmptyParents } from '$utils/purgeEmptyDirAndEmptyParents';
 const logger = new Logger("cycler");
 const { logInfo, logError, logFatal, logFatalAndThrow } = logger;
 
@@ -181,10 +179,8 @@ export class Cycler {
                 logInfo
             );
 
-            /** Contains all tile image paths that where written to. */
-            const writtenTileImagePaths = new Set<string>();
-            /** Contains all error paths that where written to. */
-            const writtenErrorPaths = new Set<string>();
+            const tileImagePathConverger = new PathConverger();
+            const errorPathConverger = new PathConverger();
 
             const outputPathsPreFormatted = this._tileOutputFilepathFormatters
                 ? {
@@ -200,9 +196,9 @@ export class Cycler {
 
             const markFilepathWritten: FnMarkFilepathWritten = (filepath, isTileImagePath) => {
                 if (isTileImagePath)
-                    writtenTileImagePaths.add(filepath);
+                    tileImagePathConverger.add(filepath);
                 else
-                    writtenErrorPaths.add(filepath);
+                    errorPathConverger.add(filepath);
             }
 
             const getTileWriteFilepath: FnGetTileWriteFilepath = (tilePos) => {
@@ -263,47 +259,8 @@ export class Cycler {
             const cycleFinished = new Date();
             const cycleElapsedMs = cycleFinished.getTime() - cycleStarted.getTime();
 
-            if (this._tileOutputFilepathFormatters && (writtenTileImagePaths.size > 0 || writtenErrorPaths.size > 0)) {
+            if (this._tileOutputFilepathFormatters) {
                 logInfo("running post-stage renaming");
-
-                /** Log frequency based on progress. */
-                const progressLogStep = 0.20;
-
-                /** 
-                 * Renames given paths using specified formatter.
-                 * @returns
-                 */
-                const renamePaths = async (paths: Set<string>, formatter: (pathStr: string) => string): Promise<void> => {
-                    let i = 0;
-                    let nextLogAtProgress = 0;
-                    let oldDirpaths = new Set<string>();
-                    for (const pathStr of paths) {
-                        if (!(await fs.exists(pathStr)))
-                            continue;
-
-                        const progress = i++ / paths.size;
-                        if (progress >= nextLogAtProgress) {
-                            logInfo(chalk.gray(`renaming... (${roundToDigit(progress * 100, 0)}%)`));
-                            nextLogAtProgress = clamp(progress + progressLogStep, 0, 1);
-                        }
-
-                        // substitute the only post-stage variable.
-                        const newPathStr = formatter(pathStr);
-                        if (newPathStr !== pathStr) {
-                            await fs.ensureDir(path.parse(newPathStr).dir);
-                            await fs.rename(pathStr, newPathStr);
-                            oldDirpaths.add(path.parse(pathStr).dir);
-                        }
-                    }
-
-                    if (oldDirpaths.size > 0) {
-                        logInfo(chalk.gray("purging empty dirs left after renaming"));
-
-                        for (const pathStr of oldDirpaths) {
-                            await tryPurgeEmptyDirAndEmptyParents(pathStr);
-                        }
-                    }
-                }
 
                 const getPostFmtedPath = (pathStr: string, isTileImagePath: boolean) => this._tileOutputFilepathFormatters!.post({
                     writtenPath: pathStr,
@@ -313,17 +270,28 @@ export class Cycler {
                     isTileImagePath
                 });
 
-                if (writtenTileImagePaths.size > 0)
-                    await renamePaths(
-                        writtenTileImagePaths,
-                        pathStr => getPostFmtedPath(pathStr, true)
-                    );
+                const tryRenamePath = async (pathFrom: string, formatter: (pathStr: string) => string): Promise<void> => {
+                    logInfo(chalk.gray("renaming: " + pathFrom));
 
-                if (writtenErrorPaths)
-                    await renamePaths(
-                        writtenErrorPaths,
-                        pathStr => getPostFmtedPath(pathStr, false)
-                    );
+                    if (!(await fs.exists(pathFrom)))
+                        return;
+
+                    // substitute the only post-stage variable.
+                    const pathTo = formatter(pathFrom);
+                    logInfo(chalk.gray("      to: " + pathTo));
+                    if (pathTo === pathFrom)
+                        return;
+
+                    await fs.ensureDir(path.parse(pathTo).dir)
+                    await fs.rename(pathFrom, pathTo);
+                    await tryPurgeEmptyDirAndEmptyParents(pathFrom);
+                }
+
+                if (tileImagePathConverger.convergedPath)
+                    await tryRenamePath(tileImagePathConverger.convergedPath, pathStr => getPostFmtedPath(pathStr, true));
+
+                if (errorPathConverger.convergedPath)
+                    await tryRenamePath(errorPathConverger.convergedPath, pathStr => getPostFmtedPath(pathStr, false));
 
                 logInfo(chalk.gray("post-stage renaming complete"));
             }
@@ -336,38 +304,5 @@ export class Cycler {
                 break;
             }
         }
-    }
-}
-
-/**
- * Compares 2 paths from left to right, returning an unchanged part between two strings.
- * @example
- * abc/def/foo
- * abc/def/bar
- * 
- * // will return
- * abc/def
- * 
- * @param pathStr1 CO
- * @param pathStr2 
- */
-function undiffPaths(pathStr1: string, pathStr2: string): string {
-    const chars = [];
-    for (let i = 0; i < Math.min(pathStr1.length, pathStr2.length); i++) {
-        const char1 = pathStr1[i];
-        const char2 = pathStr2[i];
-        if (char1 !== char2)
-            break;
-
-        chars.push(char1);
-    }
-    return chars.join("");
-}
-
-/** Purges a specified directory if it's empty. Does the same check for parent directory and so on, until a filled directory is found. */
-async function tryPurgeEmptyDirAndEmptyParents(pathStr: string) {
-    if ((await fs.readdir(pathStr)).length === 0) {
-        await fs.rmdir(pathStr);
-        await tryPurgeEmptyDirAndEmptyParents(path.parse(pathStr).dir);
     }
 }
