@@ -1,6 +1,6 @@
 # wplace-archiver
 
-An CLI archiver script for wplace.live. Preserve 🧡
+An CLI archiver utility for wplace.live. Preserve 🧡
 
 Currently archived: see [wplace-archives](https://github.com/murolem/wplace-archives).
 
@@ -26,7 +26,7 @@ where:
 
 See [Modes](#Modes) for the list of available modes.
 
-The script operates on **tiles**. A tile is a 1000x1000px image that holds pixels of a part of a map. Entire map is 2048x2048 tiles.
+The utility operates on **tiles**. A tile is a 1000x1000px image that holds pixels of a part of a map. Entire map is 2048x2048 tiles.
 
 For help (to see available commands), run:
 
