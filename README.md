@@ -132,7 +132,7 @@ To get help on this mode (see available commands), run:
 ./wplace-archiver help region
 ```
 
-#### Additional options
+##### Additional options
 
 To make the initial position a center of a region instead of the npm startupper left corner, pass `--center`.
 
@@ -200,7 +200,7 @@ npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-e
 
 Currently, only the [#World](#world) archives are being uploaded to [wplace-archives](https://github.com/murolem/wplace-archives).
 
-The archival and upload are running on my server via task `archive_map_and_upload` task, which utilized Freebind. What it does:
+The archival and upload are running on my server via task `archive_map_and_upload`, which utilized [#Freebind](#freebind). What it does:
 
 1. launches the arhcival process.
 2. waits for it to finish.
