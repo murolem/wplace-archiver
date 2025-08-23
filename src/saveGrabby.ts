@@ -245,7 +245,7 @@ export async function saveGrabby(
                     return;
                 }
 
-                logInfo(chalk.gray(`pixel threshold passed (${applyNumberUnitSuffix(pixelCount)} > ${modeOpts.pixelThreshold}), scheduling discovery for nearby tiles`));
+                logInfo(chalk.gray(`pixel threshold passed (${applyNumberUnitSuffix(pixelCount)} >= ${modeOpts.pixelThreshold}), scheduling discovery for nearby tiles`));
                 const scheduledRes = tryAddTilePositionsToPool(
                     tileDiscoveryOffsets.map(offset => new TilePosition(
                         tilePos.x + offset.x,
