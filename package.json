@@ -25,10 +25,14 @@
     "zod": "^4.0.17"
   },
   "devDependencies": {
+    "@inquirer/editor": "^4.2.17",
     "@types/bun": "latest",
     "@types/fs-extra": "^11.0.4",
     "@types/humanize-duration": "^3.27.4",
+    "@types/semver": "^7.7.0",
     "@types/victor": "^1.1.5",
+    "semver": "^7.7.2",
+    "string-argv": "^0.3.2",
     "typescript": "~5.8.3"
   },
   "bin": {

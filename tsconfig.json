@@ -10,6 +10,9 @@
     ],
     "skipLibCheck": true,
     "paths": {
+      "$tasks/*": [
+        "./tasks/*"
+      ],
       "$preset": [
         "./src/preset.ts"
       ],
@@ -48,6 +51,6 @@
   },
   "include": [
     "src",
-    "wa"
+    "tasks"
   ]
 }
