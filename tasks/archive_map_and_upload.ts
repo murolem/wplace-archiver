@@ -137,39 +137,49 @@ World archive \`${archivedDir.dirname}\``;
 
     logInfo(`creating release ${chalk.bold(title)}`);
 
-    const releaseCreateRes = await spawn(`gh release create ${title}`, {
-        args: [
-            "-t", title,
-            "-n", notes,
-            "--repo", opts.archivesRepo
-        ]
-    });
-    if (releaseCreateRes.isErr())
-        logFatalAndThrow({ msg: `release creation failed`, data: releaseCreateRes.error });
+    while (true) {
+        const releaseCreateRes = await spawn(`gh release create ${title}`, {
+            args: [
+                "-t", title,
+                "-n", notes,
+                "--repo", opts.archivesRepo
+            ]
+        });
+        if (releaseCreateRes.isErr()) {
+            logError({ msg: `release creation failed, retrying`, data: releaseCreateRes.error });
+            continue;
+        }
+
+        break;
+    }
 
 
     logInfo(`uploading artifacts`);
 
-    const uploadRes = await spawn(`gh release upload ${title}`, {
-        args: [
-            "--repo", opts.archivesRepo,
-            ...artifactsPathsRelToCwd
-        ]
-    });
-    if (uploadRes.isErr()) {
-        logError({ msg: `upload failed, retrying`, data: uploadRes.error });
-        continue;
+    while (true) {
+        const uploadRes = await spawn(`gh release upload ${title}`, {
+            args: [
+                "--repo", opts.archivesRepo,
+                ...artifactsPathsRelToCwd
+            ]
+        });
+        if (uploadRes.isErr()) {
+            logError({ msg: `upload failed, retrying`, data: uploadRes.error });
+            continue;
+        }
+
+        break;
     }
 
     logInfo(`release uploaded! \nrelease: ` + chalk.bold(`https://github.com/${opts.archivesRepo}/releases/tag/${title}`));
 
-    logInfo(`${chalk.bgMagenta.bold("purging")} artifacts`);
+    logInfo(chalk.bgMagenta.bold("purging artifacts"));
 
     for (const p of artifactsPathsRelToCwd) {
         await fs.rm(p, { force: true });
     }
 
-    logInfo(`${chalk.bgMagenta.bold("purging")} archived dir`);
+    logInfo(chalk.bgMagenta.bold("purging archived dir"));
 
     await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
 
