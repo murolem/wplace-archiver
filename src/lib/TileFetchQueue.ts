@@ -211,7 +211,7 @@ export class TileFetchQueue {
                     let pauseDurationMs: number = 0;
                     if (retryAfterHeader) {
                         pauseDurationMs = parseInt(retryAfterHeader) * 1000;
-                        logWarn(`too many requests; pausing queue for ${chalk.bold(humanizeDuration(pauseDurationMs))} (set by Retry-After header) before retrying. consider decreasing RPS/concurrency.`);
+                        logWarn(`too many requests; pausing queue for ${chalk.bold(humanizeDuration(pauseDurationMs))} before retrying (set by Retry-After header). consider decreasing RPS/concurrency.`);
                     } else {
                         pauseDurationMs = retryDelayMs;
                         logWarn(`too many requests; pausing queue for ${chalk.bold(humanizeDuration(pauseDurationMs))} before retrying. consider decreasing RPS/concurrency.`);

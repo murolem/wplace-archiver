@@ -41,13 +41,8 @@
   "scripts": {
     "start": "bun src/cli/index.ts",
     "start:freebind": "tsx src/cli/index.ts",
-    "build": "tsc && bun run build:linux-x64 && bun run build:windows-x64",
-    "build:linux-x64": "bun run build:base -- --target=bun-linux-x64",
-    "build:windows-x64": "bun run build:base -- --target=bun-windows-x64",
-    "build:current": "bun run build:base",
-    "build:base": "bun build  ./src/cli/index.ts --compile --minify --sourcemap --outfile \"dist/wplace_archiver\"",
-    "build_and_upload": "bun tasks/build_and_upload.ts",
-    "archive_map_and_upload": "tsx tasks/archive_map_and_upload"
+    "build": "tsc && bun tasks/build.ts",
+    "archive-map-and-upload": "tsx tasks/archive_map_and_upload"
   },
   "type": "module"
 }

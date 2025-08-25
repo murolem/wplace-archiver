@@ -1,4 +1,3 @@
-import { string, z } from 'zod';
 import { Logger } from '$logger';
 import { spawn } from './utils/spawn';
 import { program } from '@commander-js/extra-typings';
@@ -39,8 +38,6 @@ const out = [
     '.',
     vn('%tile_ext'),
 ].join("");
-
-console.log(out);
 
 while (true) {
     logInfo("starting archival cycle");
