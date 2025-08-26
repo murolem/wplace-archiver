@@ -213,7 +213,7 @@ The archival and upload are running on my server via task `archive_map_and_uploa
 To run:
 
 ```bash
-npm run archive_map_and_upload <args>
+npm run archive-map-and-upload <args>
 ```
 
 ## Developing
@@ -256,8 +256,8 @@ bun run build:current
 
 ### Creating a release
 
-Releases are created via `build_and_upload` task. To run:
+Releases are created via `build` task. To run:
 
 ```bash
-bun run build_and_upload <version>
+bun run build <version>
 ```
