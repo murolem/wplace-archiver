@@ -259,5 +259,13 @@ bun run build:current
 Releases are created via `build` task. To run:
 
 ```bash
-bun run build <version>
+bun run build
+```
+
+### Uploading a release
+
+Uploads are done via `--upload` option in `build` task. To run:
+
+```bash
+bun run build --upload <version>
 ```
