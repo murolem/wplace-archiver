@@ -190,7 +190,7 @@ Since agents are reused, it is still possible to get rate limited on individual 
 
 To control RPS per individual IP, use `--server-rps-limit <rps>`.
 
-Example command to archive the entire map and no error file output:
+Example command to archive the entire map (with error file output):
 
 ```bash
 npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-error-out --freebind 2a00:1450:4001:81b::/64
@@ -200,7 +200,7 @@ npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-e
 
 Currently, only the [#World](#world) archives are being uploaded to [wplace-archives](https://github.com/murolem/wplace-archives).
 
-The archival and upload are running on my server via task `archive_map_and_upload`, which utilized [#Freebind](#freebind). What it does:
+The archival and upload are running on my server via task `archive_map_and_upload`, which utilizes [#Freebind](#freebind). What it does:
 
 1. launches the arhcival process.
 2. waits for it to finish.
