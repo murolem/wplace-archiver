@@ -80,9 +80,10 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
     const taskPromise = new DeferredPromise<void>();
     postStepTasks.push(taskPromise);
 
-    const resolveAndRemoveSelfFromTaskArr = (): void => {
+    const resolveAndRemoveSelfFromTaskArr = (): Promise<void> => {
         taskPromise.resolve();
         postStepTasks.splice(postStepTasks.indexOf(taskPromise));
+        return taskPromise;
     }
 
 
@@ -150,7 +151,7 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
     // @ts-ignore
     const splitRes = await splitResPromise;
     if (splitRes.isErr()) {
-        logFatalAndThrow({ msg: "failed to compress (#2); cancelling post-task", data: splitRes.error });
+        logError({ msg: "failed to compress (#2); cancelling post-task", data: splitRes.error });
         return resolveAndRemoveSelfFromTaskArr();
     }
 
@@ -223,4 +224,6 @@ World archive \`${archivedDir.dirname}\``;
     logInfo(chalk.bgMagenta.bold("purging archived dir"));
 
     await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
+
+    return resolveAndRemoveSelfFromTaskArr();
 }
