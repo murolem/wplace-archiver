@@ -17,7 +17,9 @@ export async function spawn(command: string, opts: Partial<{
 
     cwd: string,
 
-    processCreatedCb: (process: ReturnType<typeof nodeSpawn>) => void
+    processCreatedCb: (process: ReturnType<typeof nodeSpawn>) => void,
+
+    signal: AbortSignal
 }> = {}) {
     const firstSpaceIdx = command.indexOf(" ");
     const commandMain = command.slice(0, (firstSpaceIdx === -1 ? undefined : firstSpaceIdx));
@@ -47,7 +49,8 @@ export async function spawn(command: string, opts: Partial<{
                 FORCE_COLOR: "true",
                 ...(opts.env ?? {})
             },
-            cwd: opts.cwd ?? process.cwd()
+            cwd: opts.cwd ?? process.cwd(),
+            signal: opts.signal
         })
             .on('exit', code => {
                 if (code === 0)

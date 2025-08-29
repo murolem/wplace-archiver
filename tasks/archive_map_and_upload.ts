@@ -6,7 +6,9 @@ import { variableName as vn } from '$cli/utils';
 import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
-const { logInfo, logError, logFatalAndThrow } = new Logger("task:archive_map_and_upload");
+import { DeferredPromise } from '$utils/DeferredPromise';
+const logger = new Logger("task:archive-map-and-upload");
+const { logInfo, logError, logFatalAndThrow } = logger;
 
 
 // ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -21,9 +23,11 @@ const programParsed = program
     .option('--server-rps <integer>', "Requests per IP.", getIntRangeParser(1, Infinity), 4)
     .option('--loop', "Enabled loop.")
     .option("--archives-repo <[HOST/]OWNER/REPO>", "Repo to where to upload the archives to.", "murolem/wplace-archives")
+    .option("--release-upload-timeout <minutes>", "Maximum duration of an archive upload. If upload time exceeds timeout, it will be restarted.", getIntRangeParser(1, Infinity), 100)
     .parse();
 
 const opts = programParsed.opts();
+const releaseUploadTimeoutMs = opts.releaseUploadTimeout * 60 * 1000;
 
 /** Path to dir where archival dirs will appear. NO TRAILING SLASH. */
 const pathToWhereDirsWillAppear = 'archives/to_upload/world';
@@ -39,6 +43,8 @@ const out = [
     vn('%tile_ext'),
 ].join("");
 
+
+const postStepTasks: Promise<void>[] = [];
 while (true) {
     logInfo("starting archival cycle");
 
@@ -60,7 +66,27 @@ while (true) {
         continue;
     }
 
-    logInfo("searching for the archive dir");
+    enqueuePostMapDownloadTask();
+
+    logInfo(chalk.bold(`✅ cycle download complete, post-task enqueued (tasks active: ${postStepTasks.length}); entering new cycle`));
+
+    if (!opts.loop)
+        break;
+}
+
+async function enqueuePostMapDownloadTask(): Promise<void> {
+    logger.logInfo("[post-step] entering post-step")
+
+    const taskPromise = new DeferredPromise<void>();
+    postStepTasks.push(taskPromise);
+
+    const resolveAndRemoveSelfFromTaskArr = (): void => {
+        taskPromise.resolve();
+        postStepTasks.splice(postStepTasks.indexOf(taskPromise));
+    }
+
+
+    logger.logInfo("[post-step] searching for the archive dir");
 
     const archivedDir = (await fs.readdir(pathToWhereDirsWillAppear))
         .reduce((accum, e) => {
@@ -79,8 +105,12 @@ while (true) {
             createdTs: 0
         } as { dirname: string, dirpath: string, createdTs: number });
 
-    if (archivedDir.dirname === '')
-        logFatalAndThrow("failed to retrieve newest archived dirpath");
+    if (archivedDir.dirname === '') {
+        logger.logError("failed to retrieve newest archived dirpath; cancelling post-task.");
+        return resolveAndRemoveSelfFromTaskArr();
+    }
+
+    const { logInfo, logError, logFatalAndThrow } = new Logger(`task:archive-map-and-upload | post-step ${archivedDir.dirname}`);
 
     logInfo("archive dir found: " + chalk.bold(archivedDir.dirpath));
 
@@ -112,13 +142,17 @@ while (true) {
             });
         },
     });
-    if (compressRes.isErr())
-        logFatalAndThrow({ msg: "failed to compress", data: compressRes.error });
+    if (compressRes.isErr()) {
+        logError({ msg: "failed to compress; cancelling post-task", data: compressRes.error });
+        return resolveAndRemoveSelfFromTaskArr();
+    }
 
     // @ts-ignore
     const splitRes = await splitResPromise;
-    if (splitRes.isErr())
-        logFatalAndThrow({ msg: "failed to compress (#2)", data: splitRes.error });
+    if (splitRes.isErr()) {
+        logFatalAndThrow({ msg: "failed to compress (#2); cancelling post-task", data: splitRes.error });
+        return resolveAndRemoveSelfFromTaskArr();
+    }
 
     const artifactsPathsRelToCwd = (await fs.readdir(pathToWhereDirsWillAppear))
         .filter(f => f.startsWith(archiveDirpathPattern))
@@ -154,12 +188,22 @@ World archive \`${archivedDir.dirname}\``;
     logInfo(`uploading artifacts`);
 
     while (true) {
+        const abortCtrl = new AbortController();
+        const abortHandle = setTimeout(() => {
+            abortCtrl.abort("timeout");
+            logError("upload aborted (timeout)")
+        }, releaseUploadTimeoutMs);
+
         const uploadRes = await spawn(`gh release upload ${title}`, {
             args: [
+                "--clobber",
                 "--repo", opts.archivesRepo,
                 ...artifactsPathsRelToCwd
-            ]
+            ],
+            signal: abortCtrl.signal
         });
+        clearTimeout(abortHandle);
+
         if (uploadRes.isErr()) {
             logError({ msg: `upload failed, retrying`, data: uploadRes.error });
             continue;
@@ -179,9 +223,4 @@ World archive \`${archivedDir.dirname}\``;
     logInfo(chalk.bgMagenta.bold("purging archived dir"));
 
     await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
-
-    logInfo(chalk.bold("✅ cycle complete"));
-
-    if (!opts.loop)
-        break;
 }
