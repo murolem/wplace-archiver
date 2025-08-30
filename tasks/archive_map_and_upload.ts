@@ -24,6 +24,7 @@ const programParsed = program
     .option('--loop', "Enabled loop.")
     .option("--archives-repo <[HOST/]OWNER/REPO>", "Repo to where to upload the archives to.", "murolem/wplace-archives")
     .option("--release-upload-timeout <minutes>", "Maximum duration of an archive upload. If upload time exceeds timeout, it will be restarted.", getIntRangeParser(1, Infinity), 60)
+    .option("-v", "Enables verbose logging.")
     .parse();
 
 const opts = programParsed.opts();
@@ -31,10 +32,13 @@ const releaseUploadTimeoutMs = opts.releaseUploadTimeout * 60 * 1000;
 
 /** Path to dir where archival dirs will appear. NO TRAILING SLASH. */
 const pathToWhereDirsWillAppear = 'archives/to_upload/world';
+// !note: some codepaths may be hardcoded and not rely on this variable directly.
 const out = [
     pathToWhereDirsWillAppear,
     '/',
     vn('%date'),
+    '+',
+    vn('%duration'),
     '/',
     vn('%tile_x'),
     '/',
@@ -48,14 +52,18 @@ const postStepTasks: Promise<void>[] = [];
 while (true) {
     logInfo("starting archival cycle");
 
-    const cycleRes = await spawn(`npm run start:freebind -- region 0,0 --size 2048,2048 --no-error-out`, {
+    const cycleRes = await spawn(`npm run start:freebind --`, {
         noReturnStdout: true,
         args: [
+            "region", "0,0",
+            "--size", "2048,2048",
             "--out", out,
+            "--no-error-out",
             "--rps", opts.rps.toString(),
             "--rc", opts.rc.toString(),
             "--server-rps-limit", opts.serverRps.toString(),
             "--freebind", opts.subnet,
+            ...(opts.v ? ["-v"] : [])
         ]
     });
     if (cycleRes.isErr()) {
@@ -110,7 +118,7 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
         return resolveAndRemoveSelfFromTaskArr();
     }
 
-    const { logInfo, logError, logFatalAndThrow } = new Logger(`task:archive-map-and-upload | post-step ${archivedDir.dirname}`);
+    const { logInfo, logError } = new Logger(`task:archive-map-and-upload | post-step ${archivedDir.dirname}`);
 
     logInfo("archive dir found: " + chalk.bold(archivedDir.dirpath));
 
@@ -154,18 +162,18 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
         return resolveAndRemoveSelfFromTaskArr();
     }
 
+
+    logInfo(chalk.bgMagenta.bold("purging archived dir"));
+    await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
+
+
     const artifactsPathsRelToCwd = (await fs.readdir(pathToWhereDirsWillAppear))
         .filter(f => f.startsWith(archiveDirpathPattern))
         .map(f => path.join(pathToWhereDirsWillAppear, f))
 
     logInfo(`artifacts to upload: \n${artifactsPathsRelToCwd.map(f => `- ${f}`).join("\n")}`);
 
-    logInfo(chalk.bgMagenta.bold("purging archived dir"));
-
-    await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
-
-
-    const title = `world-${archivedDir.dirname}`;
+    const title = `world-${archivedDir.dirname.split("+")[0]}`;
 
     const notes = `\
 World archive \`${archivedDir.dirname}\``;
@@ -198,7 +206,9 @@ World archive \`${archivedDir.dirname}\``;
             logError("upload aborted (timeout)")
         }, releaseUploadTimeoutMs);
 
-        const uploadRes = await spawn(`gh release upload ${title}`, {
+        const uploadRes = await spawn(`gh release upload ${title}   `, {
+            noReturnStdout: true,
+            noInheritStdout: true,
             args: [
                 "--clobber",
                 "--repo", opts.archivesRepo,
@@ -223,6 +233,8 @@ World archive \`${archivedDir.dirname}\``;
     for (const p of artifactsPathsRelToCwd) {
         await fs.rm(p, { force: true });
     }
+
+    logInfo(chalk.bgGray("post-step complete!"));
 
     return resolveAndRemoveSelfFromTaskArr();
 }

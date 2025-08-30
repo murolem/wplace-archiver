@@ -26,9 +26,6 @@ const generalOpts = program
     .option("-v", "Enables verbose logging.")
     .opts();
 
-if (generalOpts.v)
-    Logger.setLogLevel('DEBUG');
-
 const regionSubcommands = ["size", "to", "radius"];
 program.command("region")
     .description("Captures a region of tiles.")
@@ -50,6 +47,9 @@ program.command("region")
         .conflicts("--to")
     )
     .action(async (xy, opts) => {
+        if (generalOpts.v)
+            Logger.setLogLevel('DEBUG');
+
         let region: Region;
 
         if (opts.size) {
@@ -158,6 +158,9 @@ program.command("grabby")
     )
     .option("--no-reuse-tiles", "If set, no tiles will be reused for leaderboard mode. By default, instead of fetching duplicate tiles when grabby overlaps due to small distance between places, matching tiles that are already fetched are reused. Side effect of this is if archival takes a long time, some tiles might end up pretty old.")
     .action(async (xy, opts) => {
+        if (generalOpts.v)
+            Logger.setLogLevel('DEBUG');
+
         if (opts.leaderboards) {
             if (!opts.byRegion)
                 program.error(`leaderboard category not specified.`);

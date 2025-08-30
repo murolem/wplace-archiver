@@ -9,6 +9,15 @@ export const logLevels = {
     "SIGINT": 5
 }
 
+const logLevelToDisplay: Record<LogLevel, string> = {
+    DEBUG: "debug",
+    INFO: " info",
+    WARN: " warn",
+    ERROR: "error",
+    FATAL: "fatal",
+    SIGINT: "sigint",
+}
+
 const logLevelToColorFn: Record<LogLevel, (msg: Message) => Message> = {
     DEBUG: msg => chalk.gray(msg),
     INFO: msg => msg,
@@ -102,7 +111,7 @@ export class Logger {
 
         const mainMessageRows = mainMessage.split("\n");
         for (let i = 0; i < mainMessageRows.length; i++) {
-            logMethod(colorFn(`${chalk.bold(level.toLowerCase())}: [${this.logPrefix}] ${mainMessageRows[i]}`));
+            logMethod(colorFn(`${chalk.bold(logLevelToDisplay[level])}: [${this.logPrefix}] ${mainMessageRows[i]}`));
         }
 
         if (extraMessages.length > 0) {

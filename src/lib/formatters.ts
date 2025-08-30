@@ -66,7 +66,7 @@ export function substituteOutVariables(str: string, varsMapped: OutVariableWeakM
         const varName = match[0];
         const subsWith = varsOrdered.find(e => e.varName === varName)?.value;
         if (subsWith === undefined) {
-            logDebug(`skipping variable '${varName}' with no substitution provided`);
+            // logDebug(`skipping variable '${varName}' with no substitution provided`);
             continue;
         }
 
