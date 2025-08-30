@@ -162,14 +162,14 @@ export class TileFetchQueue {
             attemptIndex++;
 
             const logger = new Logger(getTileLogPrefix(tilePos, { progress: progress01 }));
-            const { logInfo, logError, logWarn } = logger;
+            const { logDebug, logInfo, logError, logWarn } = logger;
 
             const writeError = (error: string) => writeErrorGeneral(tilePos, attemptIndex, error);
 
             const ts = Date.now();
             const retryDelayMs = this._getRetryDelay(attemptIndex);
 
-            logInfo(chalk.gray(`fetching: ` + url));
+            logDebug(`fetching: ` + url);
             const abortCtrl = new AbortController();
             const abortHandle = setTimeout(() => {
                 abortCtrl.abort("timeout");
@@ -202,7 +202,7 @@ export class TileFetchQueue {
             const res = responseRes.value;
             if (!res.ok) {
                 if (res.status === 404) {
-                    logInfo(chalk.gray(`tile doesn't exist, skipping`));
+                    logDebug(`tile doesn't exist, skipping`);
                     return err({ type: 'unrecoverable' });
                 } else if (res.status === 429) {
                     writeError(

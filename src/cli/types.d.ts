@@ -8,7 +8,8 @@ export type GeneralOpts = {
     requestConcurrency: number,
     /** cycle start delay in seconds */
     cycleStartDelay: number,
-    freebind?: string
+    freebind?: string,
+    v?: boolean
 }
 
 export type RegionOpts = {
