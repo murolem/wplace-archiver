@@ -23,7 +23,7 @@ const programParsed = program
     .option('--server-rps <integer>', "Requests per IP.", getIntRangeParser(1, Infinity), 4)
     .option('--loop', "Enabled loop.")
     .option("--archives-repo <[HOST/]OWNER/REPO>", "Repo to where to upload the archives to.", "murolem/wplace-archives")
-    .option("--release-upload-timeout <minutes>", "Maximum duration of an archive upload. If upload time exceeds timeout, it will be restarted.", getIntRangeParser(1, Infinity), 60)
+    .option("--release-upload-timeout <minutes>", "Maximum duration of an archive upload. If upload time exceeds timeout, it will be restarted.\n\nNote: upload is done per-part, so the timeout time is per single part. One part is no more than 2GB.", getIntRangeParser(1, Infinity), 20)
     .option("-v", "Enables verbose logging.")
     .parse();
 
@@ -199,20 +199,23 @@ World archive \`${archivedDir.dirname}\``;
 
     logInfo(`uploading artifacts`);
 
-    while (true) {
+    for (let i = 0; i < artifactsPathsRelToCwd.length; i++) {
+        const artifactPathRelToCwd = artifactsPathsRelToCwd[i];
+        logInfo(`[${i + 1} of ${artifactsPathsRelToCwd.length}] upload artifact: ${chalk.bold(artifactPathRelToCwd)}`);
+
         const abortCtrl = new AbortController();
         const abortHandle = setTimeout(() => {
             abortCtrl.abort("timeout");
             logError("upload aborted (timeout)")
         }, releaseUploadTimeoutMs);
 
-        const uploadRes = await spawn(`gh release upload ${title}   `, {
+        const uploadRes = await spawn(`gh release upload ${title}`, {
             noReturnStdout: true,
             noInheritStdout: true,
             args: [
-                "--clobber",
                 "--repo", opts.archivesRepo,
-                ...artifactsPathsRelToCwd
+                "--clobber",
+                artifactPathRelToCwd
             ],
             signal: abortCtrl.signal
         });
@@ -220,10 +223,9 @@ World archive \`${archivedDir.dirname}\``;
 
         if (uploadRes.isErr()) {
             logError({ msg: `upload failed, retrying`, data: uploadRes.error });
+            i--;
             continue;
         }
-
-        break;
     }
 
     logInfo(`release uploaded! \nrelease: ` + chalk.bold(`https://github.com/${opts.archivesRepo}/releases/tag/${title}`));
