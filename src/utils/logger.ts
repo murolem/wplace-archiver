@@ -77,8 +77,9 @@ export class Logger {
     }
 
     /** Set instance log prefix. */
-    setLogPrefix = (prefix: string): void => {
+    setLogPrefix = (prefix: string): this => {
         this.logPrefix = prefix;
+        return this;
     }
 
     log = (level: LogLevel, messageOrParams: MessageOrParams, ...extraMessages: unknown[]): void => {

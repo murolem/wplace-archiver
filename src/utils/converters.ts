@@ -6,7 +6,7 @@ import type { Position } from '$src/types';
  * @param {number} width 
  * @returns 
  */
-export function convertXyPositionToIndex(xyPos: Position, width: number) {
+export function convertXyPositionToIndex(xyPos: Position, width: number): number {
     return width * xyPos.y + xyPos.x;
 }
 
@@ -16,7 +16,7 @@ export function convertXyPositionToIndex(xyPos: Position, width: number) {
  * @param {number} width 
  * @returns 
  */
-export function convertIndexToXyPosition(index: number, width: number) {
+export function convertIndexToXyPosition(index: number, width: number): Position {
     const row = Math.floor(index / width);
     const col = index - (width * row);
     return {
