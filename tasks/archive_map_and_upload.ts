@@ -23,7 +23,7 @@ const programParsed = program
     .option('--server-rps <integer>', "Requests per IP.", getIntRangeParser(1, Infinity), 4)
     .option('--loop', "Enabled loop.")
     .option("--archives-repo <[HOST/]OWNER/REPO>", "Repo to where to upload the archives to.", "murolem/wplace-archives")
-    .option("--release-upload-timeout <minutes>", "Maximum duration of an archive upload. If upload time exceeds timeout, it will be restarted.", getIntRangeParser(1, Infinity), 100)
+    .option("--release-upload-timeout <minutes>", "Maximum duration of an archive upload. If upload time exceeds timeout, it will be restarted.", getIntRangeParser(1, Infinity), 60)
     .parse();
 
 const opts = programParsed.opts();
@@ -80,10 +80,9 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
     const taskPromise = new DeferredPromise<void>();
     postStepTasks.push(taskPromise);
 
-    const resolveAndRemoveSelfFromTaskArr = (): Promise<void> => {
+    const resolveAndRemoveSelfFromTaskArr = (): void => {
         taskPromise.resolve();
         postStepTasks.splice(postStepTasks.indexOf(taskPromise));
-        return taskPromise;
     }
 
 
@@ -161,6 +160,10 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
 
     logInfo(`artifacts to upload: \n${artifactsPathsRelToCwd.map(f => `- ${f}`).join("\n")}`);
 
+    logInfo(chalk.bgMagenta.bold("purging archived dir"));
+
+    await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
+
 
     const title = `world-${archivedDir.dirname}`;
 
@@ -220,10 +223,6 @@ World archive \`${archivedDir.dirname}\``;
     for (const p of artifactsPathsRelToCwd) {
         await fs.rm(p, { force: true });
     }
-
-    logInfo(chalk.bgMagenta.bold("purging archived dir"));
-
-    await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
 
     return resolveAndRemoveSelfFromTaskArr();
 }

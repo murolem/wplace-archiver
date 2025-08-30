@@ -12,6 +12,7 @@ import humanizeDuration from 'humanize-duration';
 import type { TilePosition } from '$lib/TilePosition';
 import type { FnWriteError } from '$lib/Cycler';
 import { fetch, Agent } from 'undici';
+import { SigintConfirm } from '$utils/sigintConfirm';
 const { logFatalAndThrow } = new Logger("tile-fetch-queue");
 
 type EnqueueTaskResult = Result<
@@ -107,6 +108,7 @@ export class TileFetchQueue {
         if (typeof args[0] === 'function') {
             const [tilePosGenerator, writeError, cbTile, getProgress] = args as Parameters<EnqueueManyFn>;
 
+            const sigintConfirm = new SigintConfirm();
             /** 
              * this queue holds promises for each enqueue, specifically for the callbacks, since our queue managed tile downloads tasks
              * and not anything beyond, so we have to manage it here.
@@ -114,6 +116,12 @@ export class TileFetchQueue {
             const cbPromiseQueue = new Set();
             let tasksCompleted = 0;
             for (const tilePos of tilePosGenerator()) {
+                if (sigintConfirm.inSigintMode) {
+                    this.pause();
+                    await sigintConfirm.sigintCancelPromise;
+                    this.start();
+                }
+
                 await this._queue.onSizeLessThan(this._targetQueueSize);
 
                 const removeCbPromiseFromCbQueue = () => void cbPromiseQueue.delete(resultAndCbPromise);
