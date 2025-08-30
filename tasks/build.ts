@@ -5,8 +5,9 @@ import { spawn } from './utils/spawn';
 import chalk from 'chalk';
 import path from 'path';
 import { z } from 'zod';
-import { parseSemverSchema, semverSchema } from '$tasks/utils/schema';
+import { semverSchema } from '$tasks/utils/schema';
 import { editor as promptEditor } from '@inquirer/prompts';
+import { parseSemverSchema } from '$tasks/utils/cli/parsers';
 const { logDebug, logInfo, logError, logFatalAndThrow } = new Logger("task:build");
 
 const programParsed = program
