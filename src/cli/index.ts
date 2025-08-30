@@ -23,7 +23,7 @@ const generalOpts = program
     .option("--cycle-start-delay <seconds>", "Delay before starting an archival cycle.", getIntRangeParser(0, Infinity), 3)
     .option("--freebind <subnet>", "[DELEOPMENT ONLY] Enables freebind with specified ipv6 subnet. Only works in development (will NOT work in CLI binary). Agents are pregenerated and reused; number of agents and reuse frequency are dependant on RPS and server RPS limit options. Requires additional setup - see README for details.")
     .option("--server-rps-limit <rps>", "[DELEOPMENT ONLY] Required for --freebind. Sets limit on amount of requests that the WPlace server can accept without getting rate limited. It's highly recommended to NOT go over the server rate limit, otherwise archival will stall.", getIntRangeParser(1, Infinity), 4)
-    .option("-v", "Enabled verbose logging.")
+    .option("-v", "Enables verbose logging.")
     .opts();
 
 if (generalOpts.v)
