@@ -74,7 +74,7 @@ export class TileFetchQueue {
             startingDelayMs: 100
         });
 
-        this._timeoutMs = maxRetryDelayMs + 2 * 1000;
+        this._timeoutMs = maxRetryDelayMs + 4 * 1000;
         this._rps = args.requestsPerSecond;
         this._freebindIpv6Subnet = args.freebind ?? null;
         this._serverRpsLimit = args.serverRpsLimit ?? null;
