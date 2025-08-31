@@ -12,6 +12,7 @@ import humanizeDuration from 'humanize-duration';
 import type { TilePosition } from '$lib/TilePosition';
 import type { FnWriteError } from '$lib/Cycler';
 import { fetch, Agent } from 'undici';
+import { SigintConfirm } from '$utils/sigintConfirm';
 const { logFatalAndThrow } = new Logger("tile-fetch-queue");
 
 type EnqueueTaskResult = Result<
@@ -73,7 +74,7 @@ export class TileFetchQueue {
             startingDelayMs: 100
         });
 
-        this._timeoutMs = maxRetryDelayMs + 2 * 1000;
+        this._timeoutMs = maxRetryDelayMs + 6 * 1000;
         this._rps = args.requestsPerSecond;
         this._freebindIpv6Subnet = args.freebind ?? null;
         this._serverRpsLimit = args.serverRpsLimit ?? null;
@@ -107,6 +108,7 @@ export class TileFetchQueue {
         if (typeof args[0] === 'function') {
             const [tilePosGenerator, writeError, cbTile, getProgress] = args as Parameters<EnqueueManyFn>;
 
+            const sigintConfirm = new SigintConfirm();
             /** 
              * this queue holds promises for each enqueue, specifically for the callbacks, since our queue managed tile downloads tasks
              * and not anything beyond, so we have to manage it here.
@@ -114,6 +116,12 @@ export class TileFetchQueue {
             const cbPromiseQueue = new Set();
             let tasksCompleted = 0;
             for (const tilePos of tilePosGenerator()) {
+                if (sigintConfirm.inSigintMode) {
+                    this.pause();
+                    await sigintConfirm.sigintCancelPromise;
+                    this.start();
+                }
+
                 await this._queue.onSizeLessThan(this._targetQueueSize);
 
                 const removeCbPromiseFromCbQueue = () => void cbPromiseQueue.delete(resultAndCbPromise);
@@ -154,14 +162,14 @@ export class TileFetchQueue {
             attemptIndex++;
 
             const logger = new Logger(getTileLogPrefix(tilePos, { progress: progress01 }));
-            const { logInfo, logError, logWarn } = logger;
+            const { logDebug, logInfo, logError, logWarn } = logger;
 
             const writeError = (error: string) => writeErrorGeneral(tilePos, attemptIndex, error);
 
             const ts = Date.now();
             const retryDelayMs = this._getRetryDelay(attemptIndex);
 
-            logInfo(chalk.gray(`fetching: ` + url));
+            logDebug(`fetching: ` + url);
             const abortCtrl = new AbortController();
             const abortHandle = setTimeout(() => {
                 abortCtrl.abort("timeout");
@@ -194,7 +202,7 @@ export class TileFetchQueue {
             const res = responseRes.value;
             if (!res.ok) {
                 if (res.status === 404) {
-                    logInfo(chalk.gray(`tile doesn't exist, skipping`));
+                    logDebug(`tile doesn't exist, skipping`);
                     return err({ type: 'unrecoverable' });
                 } else if (res.status === 429) {
                     writeError(

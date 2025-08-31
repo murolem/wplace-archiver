@@ -9,6 +9,7 @@ import { arrayToCopiedExcludingEntry } from '$utils/arrayToCopiedExcludingEntry'
 import { defaultErrOutModeGrabby, defaultErrOutModeGrabbyLeaderboardByRegion, defaultErrOutModeRegion, defaultOutModeGrabby, defaultOutModeGrabbyLeaderboardByRegion, defaultOutModeRegion } from '$cli/constants';
 import type { GeneralOpts } from '$cli/types';
 import { outErrorPathHelp, outPathHelp, positionHelpPartFormats } from '$cli/docs';
+import { Logger } from '$logger';
 
 const generalOpts = program
     .name("wplace_archiver")
@@ -22,6 +23,7 @@ const generalOpts = program
     .option("--cycle-start-delay <seconds>", "Delay before starting an archival cycle.", getIntRangeParser(0, Infinity), 3)
     .option("--freebind <subnet>", "[DELEOPMENT ONLY] Enables freebind with specified ipv6 subnet. Only works in development (will NOT work in CLI binary). Agents are pregenerated and reused; number of agents and reuse frequency are dependant on RPS and server RPS limit options. Requires additional setup - see README for details.")
     .option("--server-rps-limit <rps>", "[DELEOPMENT ONLY] Required for --freebind. Sets limit on amount of requests that the WPlace server can accept without getting rate limited. It's highly recommended to NOT go over the server rate limit, otherwise archival will stall.", getIntRangeParser(1, Infinity), 4)
+    .option("-v", "Enables verbose logging.")
     .opts();
 
 const regionSubcommands = ["size", "to", "radius"];
@@ -45,6 +47,9 @@ program.command("region")
         .conflicts("--to")
     )
     .action(async (xy, opts) => {
+        if (generalOpts.v)
+            Logger.setLogLevel('DEBUG');
+
         let region: Region;
 
         if (opts.size) {
@@ -153,6 +158,9 @@ program.command("grabby")
     )
     .option("--no-reuse-tiles", "If set, no tiles will be reused for leaderboard mode. By default, instead of fetching duplicate tiles when grabby overlaps due to small distance between places, matching tiles that are already fetched are reused. Side effect of this is if archival takes a long time, some tiles might end up pretty old.")
     .action(async (xy, opts) => {
+        if (generalOpts.v)
+            Logger.setLogLevel('DEBUG');
+
         if (opts.leaderboards) {
             if (!opts.byRegion)
                 program.error(`leaderboard category not specified.`);
