@@ -73,7 +73,10 @@ const artifacts: string[] = [];
 for (const platform of platforms) {
     logInfo(`↳ building platform ${chalk.bold(platform)}`);
 
-    let outfile = path.join("dist", `wplace-archiver_${version}_${platform}`);
+    const outfileRawName = version
+        ? `wplace-archiver_${version}_${platform}`
+        : `wplace-archiver_noversion_${platform}`;
+    let outfile = path.join("dist", outfileRawName);
     if (platform === 'windows-x64')
         outfile += ".exe";
 
