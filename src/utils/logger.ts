@@ -59,10 +59,14 @@ const defaultMsgParams: MessageParams = {
 export type MessageOrParams = Message | MessageParams;
 
 export class Logger {
-    private logPrefix = '';
+    get logPrefix() { return this._logPrefix; }
+    set logPrefix(value) {
+        this._logPrefix = value;
+    }
+    private _logPrefix: string;
 
     constructor(logPrefix: string) {
-        this.logPrefix = logPrefix;
+        this._logPrefix = logPrefix;
     }
 
     /** Set global log level. */

@@ -8,7 +8,7 @@ export function getTileLogPrefix(tilePos: Position, opts: {
 } = {}): string {
     opts.progressDigitsAfterComma ??= 3;
 
-    const progressStrFmted: string = opts.progress
+    const progressStrFmted: string = opts.progress !== undefined
         ? formatProgressToPercentage(opts.progress, opts.progressDigitsAfterComma)
         : '';
 

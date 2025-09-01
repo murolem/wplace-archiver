@@ -83,7 +83,9 @@ while (true) {
 }
 
 async function enqueuePostMapDownloadTask(): Promise<void> {
-    logger.logInfo("[post-step] entering post-step")
+    const { logInfo, logError } = new Logger(`${logger.logPrefix} | post-step`);
+
+    logInfo("entering post-step")
 
     const taskPromise = new DeferredPromise<void>();
     postStepTasks.push(taskPromise);
@@ -94,7 +96,7 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
     }
 
 
-    logger.logInfo("[post-step] searching for the archive dir");
+    logInfo("searching for the archive dir");
 
     const archivedDir = (await fs.readdir(pathToWhereDirsWillAppear))
         .reduce((accum, e) => {
@@ -117,8 +119,6 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
         logger.logError("failed to retrieve newest archived dirpath; cancelling post-task.");
         return resolveAndRemoveSelfFromTaskArr();
     }
-
-    const { logInfo, logError } = new Logger(`task:archive-map-and-upload | post-step ${archivedDir.dirname}`);
 
     logInfo("archive dir found: " + chalk.bold(archivedDir.dirpath));
 
@@ -203,23 +203,16 @@ World archive \`${archivedDir.dirname}\``;
         const artifactPathRelToCwd = artifactsPathsRelToCwd[i];
         logInfo(`[${i + 1} of ${artifactsPathsRelToCwd.length}] upload artifact: ${chalk.bold(artifactPathRelToCwd)}`);
 
-        const abortCtrl = new AbortController();
-        const abortHandle = setTimeout(() => {
-            abortCtrl.abort("timeout");
-            logError("upload aborted (timeout)")
-        }, releaseUploadTimeoutMs);
-
         const uploadRes = await spawn(`gh release upload ${title}`, {
             noReturnStdout: true,
             noInheritStdout: true,
+            timeoutMs: releaseUploadTimeoutMs,
             args: [
                 "--repo", opts.archivesRepo,
                 "--clobber",
                 artifactPathRelToCwd
-            ],
-            signal: abortCtrl.signal
+            ]
         });
-        clearTimeout(abortHandle);
 
         if (uploadRes.isErr()) {
             logError({ msg: `upload failed, retrying`, data: uploadRes.error });

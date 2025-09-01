@@ -19,7 +19,7 @@ export async function spawn(command: string, opts: Partial<{
 
     processCreatedCb: (process: ReturnType<typeof nodeSpawn>) => void,
 
-    signal: AbortSignal
+    timeoutMs: number
 }> = {}) {
     const firstSpaceIdx = command.indexOf(" ");
     const commandMain = command.slice(0, (firstSpaceIdx === -1 ? undefined : firstSpaceIdx));
@@ -50,7 +50,7 @@ export async function spawn(command: string, opts: Partial<{
                 ...(opts.env ?? {})
             },
             cwd: opts.cwd ?? process.cwd(),
-            signal: opts.signal
+            timeout: opts.timeoutMs
         })
             .on('exit', code => {
                 if (code === 0)
@@ -65,12 +65,13 @@ export async function spawn(command: string, opts: Partial<{
             })
             .on('error', error => resolve(err({ reason: "error", error })));
 
-        if (!opts.noInheritStdout)
+        if (!opts.noInheritStdout) {
             spawnedProcess.stdout?.pipe(process.stdout);
+            spawnedProcess.stderr?.pipe(process.stderr);
+        }
+
         if (!opts.noReturnStdout)
             spawnedProcess.stdout?.on('data', chunk => dataChunks.push(chunk));
-
-        spawnedProcess.stderr?.pipe(process.stderr);
 
         opts.processCreatedCb?.(spawnedProcess);
     })
