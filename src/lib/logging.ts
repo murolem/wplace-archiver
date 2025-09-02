@@ -1,5 +1,6 @@
 import { mapDimensionsInTilesStrLength } from '$src/constants';
 import type { Position } from '$src/types';
+import { clamp } from '$utils/clamp';
 import { roundToDigit } from '$utils/roundToDigit';
 import z from 'zod';
 
@@ -31,8 +32,8 @@ export function getTileLogPrefix(tilePos: Position, opts: {
  * @throws {ZodError} if {@link digitsAfterComma} is not integer or is negative.
  */
 export function formatProgressToPercentage(progress01: number, digitsAfterComma: number): string {
-    progress01Schema.parse(progress01);
-    digitsAfterCommaSchema.parse(digitsAfterComma);
+    progress01 = clamp(progress01, 0, 1);
+    digitsAfterComma = clamp(digitsAfterComma, 0, Infinity);
 
     let percentageNum = roundToDigit(progress01 * 100, digitsAfterComma);
     // do not show 100% until actually at the end
