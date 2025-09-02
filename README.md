@@ -196,11 +196,11 @@ Example command to archive the entire map (with error file output):
 npm run start:freebind -- region 0,0 --size 2048,2048 --rps 1000 --rc 250 --no-error-out --freebind 2a00:1450:4001:81b::/64
 ```
 
-## Archives uploaded to the archives repo
+## Archives repo
 
-Currently, only the [#World](#world) archives are being uploaded to [wplace-archives](https://github.com/murolem/wplace-archives).
+[wplace-archives](https://github.com/murolem/wplace-archives) repo holds archives made with this program. Currently, only the [#World](#world) archives are being uploaded.
 
-The archival and upload are running on my server via task `archive_map_and_upload`, which utilizes [#Freebind](#freebind). What it does:
+The archival and upload are run using task `archive_map_and_upload`, which utilizes [#Freebind](#freebind). What it does:
 
 1. launches the arhcival process.
 2. waits for it to finish.
@@ -214,6 +214,28 @@ To run:
 
 ```bash
 npm run archive-map-and-upload <args>
+```
+
+### Downloading archives
+
+Archives can be downloaded using the `sync` task. What it does:
+
+-   Searches for archives in an archives repo. By default it is using [wplace-archives](https://github.com/murolem/wplace-archives).
+-   Downloads matching archives locally (a filter can be set using an option).
+-   Validates each download.
+
+The task is in currently in development, so some features might be missing.
+
+To run:
+
+```bash
+bun run sync
+```
+
+To view options:
+
+```bash
+bun run sync --help
 ```
 
 ## Developing
