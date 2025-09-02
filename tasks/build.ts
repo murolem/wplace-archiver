@@ -7,6 +7,7 @@ import path from 'path';
 import { z } from 'zod';
 import { parseSemverSchema, semverSchema } from '$tasks/utils/schema';
 import { editor as promptEditor } from '@inquirer/prompts';
+import { validateCommandExistsSync } from '$tasks/utils/validateCommandExists';
 const { logDebug, logInfo, logError, logFatalAndThrow } = new Logger("task:build");
 
 const programParsed = program
@@ -20,6 +21,11 @@ const version = opts.upload;
 
 if (opts.v)
     Logger.setLogLevel('DEBUG');
+
+
+validateCommandExistsSync("gh");
+validateCommandExistsSync("bun");
+
 
 let notes: string | null = null;
 if (version) {

@@ -1,10 +1,14 @@
 import { spawn as nodeSpawn } from 'child_process';
 import { err, Ok, ok, Result } from 'neverthrow';
 import parseArgsStringToArgv from 'string-argv';
+import fs from 'fs-extra';
 
 export async function spawn(command: string, opts: Partial<{
-    /** Disabled piping spawned process stdout to current process stdout. */
+    /** Disables piping spawned process stdout to current process stdout. */
     noInheritStdout: boolean,
+
+    /** Disables piping spawned process stderr to current process stderr. */
+    noInheritStderr: boolean,
 
     noReturnStdout: boolean,
 
@@ -65,10 +69,11 @@ export async function spawn(command: string, opts: Partial<{
             })
             .on('error', error => resolve(err({ reason: "error", error })));
 
-        if (!opts.noInheritStdout) {
-            spawnedProcess.stdout?.pipe(process.stdout);
-            spawnedProcess.stderr?.pipe(process.stderr);
-        }
+        if (opts.noInheritStdout)
+            spawnedProcess.stdout?.pipe(fs.createWriteStream("/dev/null"));
+
+        if (opts.noInheritStderr)
+            spawnedProcess.stderr?.pipe(fs.createWriteStream("/dev/null"));
 
         if (!opts.noReturnStdout)
             spawnedProcess.stdout?.on('data', chunk => dataChunks.push(chunk));

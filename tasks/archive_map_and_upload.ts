@@ -7,6 +7,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
 import { DeferredPromise } from '$utils/DeferredPromise';
+import { validateCommandExistsSync } from '$tasks/utils/validateCommandExists';
 const logger = new Logger("task:archive-map-and-upload");
 const { logInfo, logError, logFatalAndThrow } = logger;
 
@@ -29,6 +30,13 @@ const programParsed = program
 
 const opts = programParsed.opts();
 const releaseUploadTimeoutMs = opts.releaseUploadTimeout * 60 * 1000;
+
+
+validateCommandExistsSync("gh");
+validateCommandExistsSync("npm");
+validateCommandExistsSync("tar");
+validateCommandExistsSync("split");
+
 
 /** Path to dir where archival dirs will appear. NO TRAILING SLASH. */
 const pathToWhereDirsWillAppear = 'archives/to_upload/world';

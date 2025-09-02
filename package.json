@@ -5,7 +5,9 @@
     "@commander-js/extra-typings": "^14.0.0",
     "@inquirer/confirm": "^5.1.14",
     "@inquirer/prompts": "^7.8.1",
+    "@types/command-exists": "^1.2.3",
     "chalk": "^5.5.0",
+    "command-exists": "^1.2.9",
     "commander": "^14.0.0",
     "fetch-retry": "^6.0.0",
     "freebind": "^0.2.2",
@@ -30,6 +32,8 @@
     "@types/humanize-duration": "^3.27.4",
     "@types/semver": "^7.7.0",
     "@types/victor": "^1.1.5",
+    "filesize": "^11.0.2",
+    "minimatch": "^10.0.3",
     "semver": "^7.7.2",
     "string-argv": "^0.3.2",
     "typescript": "~5.8.3"
@@ -42,7 +46,8 @@
     "start": "bun src/cli/index.ts",
     "start:freebind": "tsx src/cli/index.ts",
     "build": "tsc && bun tasks/build.ts",
-    "archive-map-and-upload": "tsx tasks/archive_map_and_upload"
+    "archive-map-and-upload": "tsx tasks/archive_map_and_upload",
+    "sync": "bun tasks/sync"
   },
   "type": "module"
 }

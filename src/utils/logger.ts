@@ -23,7 +23,7 @@ const logLevelToColorFn: Record<LogLevel, (msg: Message) => Message> = {
     INFO: msg => msg,
     WARN: msg => chalk.yellow(msg),
     ERROR: msg => chalk.red(msg),
-    FATAL: msg => chalk.bgRed(msg),
+    FATAL: msg => chalk.white.bgRed(msg),
     SIGINT: msg => chalk.bgMagenta(msg),
 }
 
@@ -59,14 +59,16 @@ const defaultMsgParams: MessageParams = {
 export type MessageOrParams = Message | MessageParams;
 
 export class Logger {
-    get logPrefix() { return this._logPrefix; }
-    set logPrefix(value) {
-        this._logPrefix = value;
-    }
-    private _logPrefix: string;
+    private get logPrefixes() { return this._logPrefixes; };
+    private set logPrefixes(value) { this._logPrefixes = value; }
+    private _logPrefixes: string[] = [];
 
-    constructor(logPrefix: string) {
-        this._logPrefix = logPrefix;
+    get logPrefix() { return this._logPrefix; }
+    private set logPrefix(value) { this._logPrefix = value; }
+    private _logPrefix: string | null = null;
+
+    constructor(...logPrefixes: string[]) {
+        this.setLogPrefixes(...logPrefixes);
     }
 
     /** Set global log level. */
@@ -80,10 +82,30 @@ export class Logger {
         return logLevel;
     }
 
-    /** Set instance log prefix. */
-    setLogPrefix = (prefix: string): this => {
-        this.logPrefix = prefix;
+    /** Sets instance log prefixes. */
+    setLogPrefixes = (...prefixes: string[]): this => {
+        this.logPrefixes = [...prefixes];
+        this.logPrefix = prefixes
+            .map(v => "[" + v + "]")
+            .join(" ");
+
         return this;
+    }
+
+    /** Appends a log prefix to the instance. */
+    appendLogPrefix = (prefix: string): this => {
+        this.logPrefixes.push(prefix);
+
+        if (this.logPrefix === null)
+            this.logPrefix = "[" + prefix + "]";
+        else
+            this.logPrefix += " [" + prefix + "]";
+
+        return this;
+    }
+
+    clone(): Logger {
+        return new Logger(...this.logPrefixes);
     }
 
     log = (level: LogLevel, messageOrParams: MessageOrParams, ...extraMessages: unknown[]): void => {
@@ -116,7 +138,7 @@ export class Logger {
 
         const mainMessageRows = mainMessage.split("\n");
         for (let i = 0; i < mainMessageRows.length; i++) {
-            logMethod(colorFn(`${chalk.bold(logLevelToDisplay[level])}: [${this.logPrefix}] ${mainMessageRows[i]}`));
+            logMethod(colorFn(`${chalk.bold(logLevelToDisplay[level])}: ${this._logPrefix === null ? '' : this._logPrefix + ' '}${mainMessageRows[i]}`));
         }
 
         if (extraMessages.length > 0) {
