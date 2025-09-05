@@ -68,6 +68,7 @@ const releaseSchema = z.object({
 let releasesList: z.infer<typeof releaseSchema>[];
 {
     const releasesListStrRes = await spawn('gh release list', {
+        noInheritStdout: true,
         args: [
             '--repo', opts.repo,
             '--json', 'createdAt,name,publishedAt',
