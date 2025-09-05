@@ -70,10 +70,14 @@ export async function spawn(command: string, opts: Partial<{
             .on('error', error => resolve(err({ reason: "error", error })));
 
         if (opts.noInheritStdout)
-            spawnedProcess.stdout?.pipe(fs.createWriteStream("/dev/null"));
+            spawnedProcess.stdout?.pipe(fs.createWriteStream("/dev/null"))
+        else
+            spawnedProcess.stdout?.pipe(process.stdout);
 
         if (opts.noInheritStderr)
             spawnedProcess.stderr?.pipe(fs.createWriteStream("/dev/null"));
+        else
+            spawnedProcess.stderr?.pipe(process.stderr);
 
         if (!opts.noReturnStdout)
             spawnedProcess.stdout?.on('data', chunk => dataChunks.push(chunk));
