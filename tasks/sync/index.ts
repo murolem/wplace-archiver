@@ -7,14 +7,13 @@ import path from 'path';
 import { z } from 'zod';
 import { ghReleaseAssetDigestSha256Schema } from '$tasks/utils/schema';
 import { minimatch } from 'minimatch';
-import makeFetchRetry from 'fetch-retry';
-import streamp from 'stream/promises';
 import { err, ok } from 'neverthrow';
 import { checkIntegrity } from '$tasks/utils/checkIntegrity';
 import { getIntRangeParser } from '$cli/parsers';
 import { formatProgressToPercentage } from '$lib/logging';
 import { filesize as prettyFilesize } from "filesize";
 import { validateCommandExistsSync } from '$tasks/utils/validateCommandExists';
+import { fetchChunked } from '$tasks/utils/fetchChunked';
 const logger = new Logger("task:sync");
 let { logDebug, logInfo, logError, logFatalAndThrow } = logger;
 
@@ -27,13 +26,12 @@ ${chalk.bold.yellow("Warning:")} sync task takes over the output directory, so m
     .option("-q <query glob>", "Glob to select archives to sync. Run against archive release titles.", "*")
     .option("-o <path>", "Output directory path.", "archives-sync")
     .option("--repo <repo>", "Github repository containing archives formatted '<OWNER/REPO>'. Archives are assumed to be in form of releases.", "murolem/wplace-archives")
-    .option("--timeout <minutes>", "Sync timeout for a part download, minutes. If download exceeds timeout, it will be restarted.", getIntRangeParser(1, Infinity), 20)
+    .option("--chunk-size <MB>", "Chunk size in megabytes. Each part is downloaded in chunks. Note that smaller chunks will take longer to download due to additional request overhead.", getIntRangeParser(1, Infinity), 50)
     .option("--meta <name>", "Name for a JSON metadata file stored locally along each release.", ".meta.json")
     .option("--no-meta", "Disables storing a JSON metadata file locally along each release.")
     .option("--no-post-sync-verify", `Disables verifying part integrity after syncing. ${chalk.bold("May result in " + chalk.magenta("corrupted") + " archive parts")}.`)
     .option("--verify-synced", "Enables verifying integrity of already synced parts. If enabled, will run once on program start.")
-    .option("--log-sync-progress <frequency_seconds>", "Frequency of sync progress continuous logging, seconds.", getIntRangeParser(1, Infinity), 1)
-    .option("--no-log-sync-progress", "Disabled continuous logging of sync progress.")
+    .option("--no-log-progress", "Disabled continuous logging of sync progress.")
     // .option("--loop <cron>", `Enables infinite syncing. Uses cron expression to plan for syncs (but ${chalk.italic("does not")} actually uses cron for scheduling). By default, runs every 30 minutes.`, "*/30 * * * *")
     .option('-v', "Enables verbose logging.")
     .parse();
@@ -41,17 +39,10 @@ ${chalk.bold.yellow("Warning:")} sync task takes over the output directory, so m
 const opts = programParsed.opts();
 const releaseGlob = opts.q;
 const outputDirpath = opts.o;
-const logSyncProgressEnabled: boolean = opts.logSyncProgress !== false;
-const logSyncProgressFrequencySec: number = typeof opts.logSyncProgress === 'number' ? opts.logSyncProgress : -1;
-const timeoutMs = opts.timeout * 60 * 1000;
+const chunkSizeBytes = opts.chunkSize * 1000 * 1000;
 
 if (opts.v)
     Logger.setLogLevel('DEBUG');
-
-const fetchRetry = makeFetchRetry(fetch, {
-    retries: 9999999999,
-    retryDelay: 1000,
-});
 
 
 validateCommandExistsSync("gh");
@@ -67,34 +58,40 @@ const releaseSchema = z.object({
 
 let releasesList: z.infer<typeof releaseSchema>[];
 {
-    const releasesListStrRes = await spawn('gh release list', {
-        noInheritStdout: true,
-        args: [
-            '--repo', opts.repo,
-            '--json', 'createdAt,name,publishedAt',
-            "--limit", '999999999999999'
-        ]
-    });
-
-    if (releasesListStrRes.isErr())
-        logFatalAndThrow({
-            msg: "failed to retrieve releases list",
-            data: releasesListStrRes.error
+    let releasesListStr: string;
+    while (true) {
+        const releasesListStrRes = await spawn('gh release list', {
+            noInheritStdout: true,
+            args: [
+                '--repo', opts.repo,
+                '--json', 'createdAt,name,publishedAt',
+                "--limit", '999999999999999'
+            ]
         });
 
+        if (releasesListStrRes.isErr()) {
+            logError({
+                msg: "failed to retrieve releases list; retrying",
+                data: releasesListStrRes.error
+            });
+            continue;
+        }
 
+        releasesListStr = releasesListStrRes.value;
+        break;
+    }
 
     try {
         releasesList = releaseSchema
             .array()
             .parse(
-                JSON.parse(releasesListStrRes._unsafeUnwrap())
+                JSON.parse(releasesListStr)
             );
     } catch (err) {
         logFatalAndThrow({
             msg: "failed to parse releases list",
             data: {
-                rawData: releasesListStrRes._unsafeUnwrap(),
+                rawData: releasesListStr,
                 error: err
             }
         });
@@ -151,8 +148,8 @@ const offlineReleaseMetadataSchema = z.object({
 })
 
 for (const [i, release] of releasesFiltered.entries()) {
-    const logger2 = logger.clone().appendLogPrefix(`rel ${i + 1} of ${releasesFiltered.length}`);
-    let { logDebug, logInfo, logError, logFatalAndThrow } = logger2;
+    const loggerRelease = logger.clone().appendLogPrefix(`release ${i + 1} of ${releasesFiltered.length}`);
+    let { logDebug, logInfo, logError, logFatalAndThrow } = loggerRelease;
 
     logInfo(`fetching metadata for release ${chalk.bold(release.name)}`);
 
@@ -256,8 +253,10 @@ for (const [i, release] of releasesFiltered.entries()) {
     }
 
     for (const [iAsset, asset] of releaseMetadata.assets.entries()) {
-        let { logDebug, logInfo, logError, logFatalAndThrow } = logger2.clone()
+        const loggerAsset = loggerRelease.clone()
             .appendLogPrefix(`part ${iAsset + 1} of ${releaseMetadata.assets.length}`);
+
+        let { logDebug, logInfo, logError, logFatalAndThrow } = loggerAsset;
 
         const assetFilepath = path.join(releaseDirpath, asset.name);
         const tryPurgeAsset = async () => await fs.rm(assetFilepath, { force: true });
@@ -275,7 +274,7 @@ for (const [i, release] of releasesFiltered.entries()) {
             const currentSize = (await fs.stat(assetFilepath)).size;
             const expectedSize = asset.size;
             if (currentSize !== expectedSize) {
-                logError(`synced, but size mismatch (${chalk.bold(currentSize + ' !== ' + expectedSize)}); ${chalk.magenta.bold("purging")}, re-syncing`)
+                logError(`synced, but size mismatch (${chalk.bold(currentSize + ' != ' + expectedSize)}); ${chalk.magenta.bold("purging")}, re-syncing`)
                 needsRedownload = true;
             }
 
@@ -316,57 +315,42 @@ for (const [i, release] of releasesFiltered.entries()) {
             // download
             logDebug("downloading")
 
-            let logSyncProgressHandle: ReturnType<typeof setInterval> | null = null;
-            if (logSyncProgressEnabled) {
-                logSyncProgressHandle = setInterval(async () => {
-                    const currentSize = (await fs.exists(assetFilepath))
-                        ? (await fs.stat(assetFilepath)).size
-                        : 0;
-                    const expectedSize = asset.size;
+            let bytesDown: number = 0;
+            let chunkProgress: number = 0;
+            let chunksTotal: number | null = null;
 
-                    const t = currentSize / expectedSize;
-                    logInfo(`progress: ${formatProgressToPercentage(t, 0)} (${prettyFilesize(currentSize)} => ${prettyFilesize(expectedSize)})`);
-                }, logSyncProgressFrequencySec * 1000)
+            const logChunkProgress = () => {
+                const t = bytesDown / asset.size;
+
+                const loggerChunk = loggerAsset.clone()
+                    .appendLogPrefix(`chunk ${chunkProgress}` + (chunksTotal === null ? '' : ` of ${chunksTotal}`));
+
+                loggerChunk.logInfo(`progress: ${formatProgressToPercentage(t, 0)} (${prettyFilesize(bytesDown)} => ${prettyFilesize(asset.size)})`);
             }
 
             try {
-                const res = await fetchRetry(asset.url, {
-                    signal: AbortSignal.timeout(timeoutMs),
-                    async retryOn(attempt, error, response) {
-                        if (error === null && response && response.ok)
-                            return false;
+                const res = await fetchChunked(asset.url, {
+                    chunkSize: chunkSizeBytes,
 
-                        // remove any partially saved data
-                        await tryPurgeAsset();
+                    async onChunk(accum, chunk, { chunksTotal: chunksTotalArg, size }) {
+                        if (!chunksTotal)
+                            chunksTotal = chunksTotalArg;
 
-                        // retry on any network error, or 5xx status codes
-                        if (error !== null || (response && response.status >= 500)) {
-                            logError("downloaded failed; retrying");
-                            return true;
-                        } else {
-                            logFatalAndThrow({
-                                msg: "downloaded failed; non-recoverable",
-                                data: {
-                                    responseStatus: response?.status,
-                                    responseStatusText: response?.statusText,
-                                    response
-                                }
-                            });
-                            throw ''//type guard
-                        }
+                        await fs.appendFile(assetFilepath, new Uint8Array(chunk));
+
+                        bytesDown += size;
+                        chunkProgress++;
+
+                        if (opts.logProgress)
+                            logChunkProgress();
                     }
                 })
-                    // @ts-ignore its fine
-                    .then(res => streamp.pipeline(res.body!, fs.createWriteStream(assetFilepath)))
-                    .then(ok)
-                    .catch(err);
-
-                if (logSyncProgressHandle)
-                    clearTimeout(logSyncProgressHandle);
+                    .then(res => ok(res))
+                    .catch(error => err(error));
 
                 if (res.isErr()) {
                     logError({
-                        msg: 'download failed (#2); retrying',
+                        msg: 'part download failed; retrying',
                         data: {
                             error: res.error
                         }
@@ -378,14 +362,11 @@ for (const [i, release] of releasesFiltered.entries()) {
                 }
             } catch (err) {
                 logError({
-                    msg: 'download failed (#3); retrying',
+                    msg: 'part download failed; retrying',
                     data: {
                         error: err
                     }
                 });
-
-                if (logSyncProgressHandle)
-                    clearTimeout(logSyncProgressHandle);
 
                 // remove any partially saved data
                 await tryPurgeAsset();
