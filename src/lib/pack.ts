@@ -5,12 +5,14 @@ import path from 'path';
 import cryptoRandomString from 'crypto-random-string';
 import { concatFilesGlob } from '$utils/concatFiles';
 import { extract as tarExtract } from 'tar';
+import fs from 'fs-extra';
 const logger = new Logger("pack");
 const { logDebug, logFatalAndThrow } = logger;
 
 export type ARCHIVE_PACK_STATE =
-    "MULTIPACKED"
-    | "SINGLEPACKED";
+    "PACKED_MULTI"
+    | "PACKED_SINGLE"
+    | "UNPACKED";
 
 /**
  * Attempts to guess in which packed state an archive is.
@@ -28,9 +30,12 @@ export async function guessArchivePackState(archivePath: string): Promise<{ stat
             logFatalAndThrow("no files found while guessing archive pack state using path: " + archivePath);
             throw ''//type guard
         case 1:
-            return { state: 'SINGLEPACKED', paths };
+            if (fs.statSync(paths[0]).isDirectory())
+                return { state: 'UNPACKED', paths };
+            else
+                return { state: 'PACKED_SINGLE', paths };
         default:
-            return { state: 'MULTIPACKED', paths };
+            return { state: 'PACKED_MULTI', paths };
     }
 }
 
@@ -49,7 +54,7 @@ export async function unpackArchive(archivePath: string, out: string) {
 
     const stateRes = await guessArchivePackState(archivePath);
     switch (stateRes.state) {
-        case 'MULTIPACKED':
+        case 'PACKED_MULTI':
             const concatToFilepath = path.join(getTempdir(), `archive-${cryptoRandomString({ length: 10 })}.tar.gz`);
             logDebug(`concatenating glob '${archivePath}' \nto ${concatToFilepath}`);
 
@@ -59,10 +64,13 @@ export async function unpackArchive(archivePath: string, out: string) {
             );
 
             archivePath = concatToFilepath;
-        case 'SINGLEPACKED':
+        case 'PACKED_SINGLE':
             logDebug(`unpacking archive '${archivePath}' \nto ` + out);
 
             await tarExtract({ file: archivePath, C: out });
+            break;
+        case 'UNPACKED':
+            await fs.rename(stateRes.paths[0], out);
             break;
         default:
             logFatalAndThrow(`unknown state '${stateRes.state}'`);

@@ -29,7 +29,7 @@ export async function diffCreate(
     const tempdir = getTempdir();
 
     const unpackedDirpath1 = await unpackArchive(modeOpts.keyArchive, path.join(tempdir, cryptoRandomString({ length: 15 })));
-    // const unpackedDirpath2 = await unpackArchive(modeOpts.targetArchive, path.join(tempdir, cryptoRandomString({ length: 15 })));
+    const unpackedDirpath2 = await unpackArchive(modeOpts.targetArchive, path.join(tempdir, cryptoRandomString({ length: 15 })));
 
     // const concatResArchiveFilepath = path.join(tempdir, "archive.tar.gz");
     // logInfo("concatenating")
