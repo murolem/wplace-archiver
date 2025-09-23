@@ -1,5 +1,5 @@
 import { Logger } from '$logger';
-import { spawn } from './utils/spawn';
+import { spawn } from '../src/utils/spawn';
 import { program } from '@commander-js/extra-typings';
 import { getIntRangeParser } from '$cli/parsers';
 import { variableName as vn } from '$cli/utils';
@@ -61,7 +61,6 @@ while (true) {
     logInfo("starting archival cycle");
 
     const cycleRes = await spawn(`npm run start:freebind --`, {
-        noReturnStdout: true,
         args: [
             "region", "0,0",
             "--size", "2048,2048",
@@ -140,21 +139,16 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
 
     let splitResPromise: ReturnType<typeof spawn>;
     const compressRes = await spawn(compressCommand, {
-        noReturnStdout: true,
-        noInheritStdout: true,
         cwd: archivedDirpathParent,
         env: {
             GZIP: "-1"
         },
-        processCreatedCb(tarProcess) {
-            splitResPromise = spawn(splitCommand, {
-                noReturnStdout: true,
-                noInheritStdout: true,
-                pipeStdin: true,
+        stdout: null,
+        async processCreatedCb(tarProcess) {
+            await spawn(splitCommand, {
                 cwd: archivedDirpathParent,
-                processCreatedCb(splitProcess) {
-                    tarProcess.stdout?.pipe(splitProcess.stdin!)
-                }
+                stdin: tarProcess.stdout,
+                stdout: null
             });
         },
     });
@@ -212,8 +206,7 @@ World archive \`${archivedDir.dirname}\``;
         logInfo(`[${i + 1} of ${artifactsPathsRelToCwd.length}] upload artifact: ${chalk.bold(artifactPathRelToCwd)}`);
 
         const uploadRes = await spawn(`gh release upload ${title}`, {
-            noReturnStdout: true,
-            noInheritStdout: true,
+            stdout: null,
             timeoutMs: releaseUploadTimeoutMs,
             args: [
                 "--repo", opts.archivesRepo,

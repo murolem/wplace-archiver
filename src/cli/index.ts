@@ -10,6 +10,7 @@ import { defaultErrOutModeGrabby, defaultErrOutModeGrabbyLeaderboardByRegion, de
 import type { GeneralOpts } from '$cli/types';
 import { outErrorPathHelp, outPathHelp, positionHelpPartFormats } from '$cli/docs';
 import { Logger } from '$logger';
+import { diffCreate } from '$src/diffCreate';
 
 const generalOpts = program
     .name("wplace_archiver")
@@ -216,5 +217,24 @@ program.command("grabby")
         // hard exit in case of a dangling promise
         process.exit();
     });
+
+program.command("diff-create")
+    .description("Creates a diff — a difference between two archives. A diff file can then be later applied to the first archive, restoring the second one.")
+    .argument("key-archive <path>", "Path to the key archive. A key archive is an archive on which diff archives are based upon.")
+    .argument("target-archive <path>", "Path to the archive to convert to a diff archive. A diff archive is a file containing difference between key archive and target archive that can later be applied to restore the target archive.")
+    .option("--out <path>", "Diff archive output path. By default, uses the target archive filename + diff archive extension '.wpd'.")
+    .action(async (keyArchivePath, targetArchivePath, opts) => {
+        if (generalOpts.v)
+            Logger.setLogLevel('DEBUG');
+
+        await diffCreate({
+            keyArchive: keyArchivePath,
+            targetArchive: targetArchivePath,
+            out: opts.out
+        }, generalOpts);
+
+        // hard exit in case of a dangling promise
+        process.exit();
+    })
 
 program.parse();

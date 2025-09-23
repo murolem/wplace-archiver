@@ -1,4 +1,6 @@
 import path from 'path';
+import { Logger } from '$logger';
+const { logFatalAndThrow } = new Logger("convergePaths");
 
 /**
  * Given a number of paths, finds a common directory path between all of them.
@@ -49,6 +51,25 @@ export function convergePaths(...paths: string[]): string {
         segment = segment.substring(0, lastSlashIdx + 1);
 
     return segment;
+}
+
+/** Converges filenames, returning a common part. */
+export function convergeFilenames(...filenames: string[]): string {
+    if (filenames.length === 0)
+        logFatalAndThrow("failed to converge filenames: no filenames provided");
+    else if (filenames.length === 1)
+        return filenames[0];
+
+    let i = 0;
+    while (true) {
+        const char = filenames[0][i];
+        for (let fi = 1; fi < filenames.length; fi++) {
+            if (filenames[fi][i] !== char)
+                return filenames[0].substring(0, i);
+        }
+
+        i++;
+    }
 }
 
 /**

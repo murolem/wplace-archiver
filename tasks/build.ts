@@ -1,7 +1,7 @@
 import { program } from '@commander-js/extra-typings';
 import { Logger } from '$logger';
 import * as semver from 'semver';
-import { spawn } from './utils/spawn';
+import { spawn } from '../src/utils/spawn';
 import chalk from 'chalk';
 import path from 'path';
 import { z } from 'zod';
@@ -31,7 +31,7 @@ let notes: string | null = null;
 if (version) {
     logInfo("fetching latest version metadata from repo")
 
-    const latestReleaseRes = await spawn("gh release view --json tagName", { noInheritStdout: true })
+    const latestReleaseRes = await spawn("gh release view --json tagName", { stdout: null, returnStdout: true })
     if (latestReleaseRes.isErr())
         logFatalAndThrow({ msg: `failed to fetch latest release info`, data: latestReleaseRes.error });
 

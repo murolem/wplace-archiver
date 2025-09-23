@@ -1,7 +1,7 @@
 import { program } from '@commander-js/extra-typings';
 import { Logger } from '$logger';
 import fs from 'fs-extra';
-import { spawn } from '../utils/spawn';
+import { spawn } from '../../src/utils/spawn';
 import chalk from 'chalk';
 import path from 'path';
 import { z } from 'zod';
@@ -14,6 +14,7 @@ import { formatProgressToPercentage } from '$lib/logging';
 import { filesize as prettyFilesize } from "filesize";
 import { validateCommandExistsSync } from '$tasks/utils/validateCommandExists';
 import { fetchChunked } from '$tasks/utils/fetchChunked';
+import { metadataLatestVersion, metadataSchemaLatest as OfflineReleaseMetadataSchemaLatest, parseMetadata, type Metadata, type MetadataLatest, type MetadataLatest as OfflineReleaseMetadataLatest } from './schema/offlineMeta';
 const logger = new Logger("task:sync");
 let { logDebug, logInfo, logError, logFatalAndThrow } = logger;
 
@@ -26,7 +27,7 @@ ${chalk.bold.yellow("Warning:")} sync task takes over the output directory, so m
     .option("-q <query glob>", "Glob to select archives to sync. Run against archive release titles.", "*")
     .option("-o <path>", "Output directory path.", "archives-sync")
     .option("--repo <repo>", "Github repository containing archives formatted '<OWNER/REPO>'. Archives are assumed to be in form of releases.", "murolem/wplace-archives")
-    .option("--chunk-size <MB>", "Chunk size in megabytes. Each part is downloaded in chunks. Note that smaller chunks will take longer to download due to additional request overhead.", getIntRangeParser(1, Infinity), 50)
+    .option("--chunk-size <MB>", "Chunk size in megabytes. Each part is downloaded in chunks. Note that smaller chunks will take longer to download due to additional request overhead.", getIntRangeParser(1, Infinity), 20)
     .option("--meta <name>", "Name for a JSON metadata file stored locally along each release.", ".meta.json")
     .option("--no-meta", "Disables storing a JSON metadata file locally along each release.")
     .option("--no-post-sync-verify", `Disables verifying part integrity after syncing. ${chalk.bold("May result in " + chalk.magenta("corrupted") + " archive parts")}.`)
@@ -61,7 +62,8 @@ let releasesList: z.infer<typeof releaseSchema>[];
     let releasesListStr: string;
     while (true) {
         const releasesListStrRes = await spawn('gh release list', {
-            noInheritStdout: true,
+            returnStdout: true,
+            stdout: null,
             args: [
                 '--repo', opts.repo,
                 '--json', 'createdAt,name,publishedAt',
@@ -133,20 +135,6 @@ const releaseMetadataSchema = z.object({
     )
 });
 
-type OfflineReleaseMetadata = z.infer<typeof offlineReleaseMetadataSchema>;
-const offlineReleaseMetadataSchema = z.object({
-    metadataVersion: z.literal(1),
-    name: z.string(),
-    created: z.coerce.date(),
-    description: z.string(),
-    artifacts: z.object({
-        name: z.string(),
-        digest: z.string(),
-        size: z.number(),
-        downloadCount: z.int()
-    }).array(),
-})
-
 for (const [i, release] of releasesFiltered.entries()) {
     const loggerRelease = logger.clone().appendLogPrefix(`release ${i + 1} of ${releasesFiltered.length}`);
     let { logDebug, logInfo, logError, logFatalAndThrow } = loggerRelease;
@@ -156,7 +144,8 @@ for (const [i, release] of releasesFiltered.entries()) {
     let releaseMetadata: z.infer<typeof releaseMetadataSchema>;
     while (true) {
         const metadataRawRes = await spawn('gh release view', {
-            noInheritStdout: true,
+            returnStdout: true,
+            stdout: null,
             args: [
                 '--repo', opts.repo,
                 '--json', 'body,assets',
@@ -197,30 +186,31 @@ for (const [i, release] of releasesFiltered.entries()) {
     logInfo(`${chalk.gray("release directory: " + releaseDirpath)}`);
 
     if (opts.meta) {
-        let offlineMetadata: OfflineReleaseMetadata;
+        let offlineMetadata: Metadata;
         const offlineMetadataFilepath = path.join(releaseDirpath, opts.meta);
 
-        const ensureOfflineMetadata = (): void => {
-            offlineMetadata = {
-                metadataVersion: 1,
-                name: release.name,
+        const createAndWriteOfflineMetadata = (): Metadata => {
+            (offlineMetadata as MetadataLatest) = {
+                metadataVersion: 2,
+                title: release.name,
                 created: release.createdAt > release.publishedAt ? release.createdAt : release.publishedAt,
                 description: releaseMetadata.body,
-                artifacts: releaseMetadata.assets.map(ass => ({
-                    name: ass.name,
+                parts: releaseMetadata.assets.map(ass => ({
+                    filename: ass.name,
                     digest: ass.digest,
-                    size: ass.size,
-                    downloadCount: ass.downloadCount
+                    sizeBytes: ass.size,
                 }))
             }
 
+            logDebug("writing metadata to: " + offlineMetadataFilepath);
             fs.writeJSONSync(offlineMetadataFilepath, offlineMetadata, { spaces: 4 });
+
+            return offlineMetadata;
         };
 
         if (fs.existsSync(offlineMetadataFilepath)) {
             try {
-                offlineMetadata = offlineReleaseMetadataSchema
-                    .parse(fs.readJsonSync(offlineMetadataFilepath))
+                offlineMetadata = parseMetadata(fs.readJsonSync(offlineMetadataFilepath));
             } catch (err) {
                 logError({
                     msg: "failed to parse offline release metadata; recreating",
@@ -228,10 +218,20 @@ for (const [i, release] of releasesFiltered.entries()) {
                         error: err
                     }
                 });
-                ensureOfflineMetadata();
+
+
+                // metadata corrupted > recreate
+                offlineMetadata = createAndWriteOfflineMetadata();
+            }
+
+            // metadata of old version > upgrade
+            if (offlineMetadata.metadataVersion !== metadataLatestVersion) {
+                logInfo(chalk.gray("upgrading metadata"));
+                createAndWriteOfflineMetadata();
             }
         } else {
-            ensureOfflineMetadata();
+            // metadata not exists > create
+            createAndWriteOfflineMetadata();
         }
     }
 

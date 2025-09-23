@@ -31,6 +31,12 @@ export type GrabbyByRegionOpts = {
     reuseTiles: boolean
 }
 
+export type DiffOpts = {
+    keyArchive: string,
+    targetArchive: string,
+    out: string
+}
+
 /**
  * Weak out variable-value mapping.
  */
