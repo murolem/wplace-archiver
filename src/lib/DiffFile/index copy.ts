@@ -344,21 +344,5 @@ export class DiffFileMetadata implements Omit<DiffFileMeta, 'MAGIC'> {
     }
 }
 
-async function createReader(filepath: string) {
-    if (!(await fs.exists(filepath)))
-        logFatalAndThrow("failed to read diff file: file does not exists: " + filepath);
-
-    const rh = await fs.open(filepath, 'r');
-    const readBytes = async (size: number): Promise<Uint8Array> => {
-        const res = await rh.read(Buffer.alloc(size), 0, size, null);
-        if (res.bytesRead !== size)
-            logFatalAndThrow(`failed to read diff file: requested read of ${size} bytes, but got ${res.bytesRead} bytes`);
-
-        return res.buffer;
-    }
-
-    return readBytes;
-}
-
 console.log(await DiffFileMetadata.read("./file"));
 // await fs.writeFile('./file2', textEncoder.encode('0001'));
