@@ -13,9 +13,9 @@ export async function sha256sum(filepath: string): Promise<string> {
     if (!(fs.exists(filepath)))
         logFatalAndThrow("failed to compute hash: filepath does not exist: " + filepath);
 
-    const filestream = fs.createReadStream(filepath);
+    const rs = fs.createReadStream(filepath);
     const hasher = crypto.createHash('sha256');
-    await streamp.pipeline(filestream, hasher);
+    await streamp.pipeline(rs, hasher);
 
     return hasher.digest('hex');
 }

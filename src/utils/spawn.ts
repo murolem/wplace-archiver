@@ -2,25 +2,26 @@ import { spawn as nodeSpawn } from 'child_process';
 import { err, ok, Result } from 'neverthrow';
 import parseArgsStringToArgv from 'string-argv';
 import fs from 'fs-extra';
+import type { Readable, Writable } from 'stream';
 
 export async function spawn(command: string, opts: Partial<{
     /** 
      * Stdin source.
      * @default inherit
      */
-    stdin: 'inherit' | null | NodeJS.ReadableStream,
+    stdin: 'inherit' | null | Readable,
 
     /** 
      * Stdout target.
      * @default inherit
      */
-    stdout: 'inherit' | null | NodeJS.WritableStream,
+    stdout: 'inherit' | null | Writable,
 
     /** 
      * Stdout target.
      * @default inherit
      */
-    stderr: 'inherit' | null | NodeJS.WritableStream,
+    stderr: 'inherit' | null | Writable,
 
     /**
      * Whether to return stdout once the program finishes. Buffers output internally (but does not stop it).

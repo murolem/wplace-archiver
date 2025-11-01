@@ -1,5 +1,5 @@
 import type { GeneralOpts } from '$cli/types';
-import { TilePosition } from '$lib/TilePosition';
+import { TilePosition } from '$lib/utils/TilePosition';
 import { outVariableNames, outVariableRegex, type OutVariableName } from '$src/cli/constants';
 import type { Size } from '$src/types';
 import { program } from 'commander';

@@ -1,4 +1,4 @@
-import { Encoder, type InferEncoderSchema } from '$lib/DiffFile/encoder';
+import { Encoder, type InferEncoderSchema } from '$lib/DiffFile/Encoder';
 import { err, ok } from 'neverthrow';
 
 export const DIFF_META_H_MAGIC = "!WPDIFF!";
@@ -16,16 +16,52 @@ const DIFF_META_H_PAWPRINT_MAX_BYTELEN = DIFF_META_H_PAWPRINT_VARIANTS.reduce((m
     return len > maxLen ? len : maxLen;
 }, 0);
 
-export const diffFileMagicOnlyEncoder = new Encoder()
+// file
+export const encoderFileMagic = new Encoder()
     .stringLiteral('MAGIC', DIFF_META_H_MAGIC);
 
-export const diffFileEncoder = new Encoder()
-    .stringLiteral('MAGIC', DIFF_META_H_MAGIC)
+export const encoderFileMetadata = encoderFileMagic.clone()
     .int('VERSION')
     .enum('DIFF_TYPE', ["DIFFERENTIAL", "INCREMENTAL"])
     .int('DIFF_COUNT')
     .fieldLengthSpecifierFor('DIFF_OFFSETS')
     .intList('DIFF_OFFSETS', -1)
-    .string('PAWPRINT', DIFF_META_H_PAWPRINT_MAX_BYTELEN);
+    .string('PAWPRINT', DIFF_META_H_PAWPRINT_MAX_BYTELEN)
 
-export class DiffFileMetadata { }
+export const encoderFile = encoderFileMetadata.clone()
+    .fieldLengthSpecifierFor('DIFFS')
+    .bytes('DIFFS', -1)
+
+// diffs
+export const encoderDiffMetadata = new Encoder()
+    .date('CREATED')
+    // change count
+    .int('PIXELS_TOTAL')
+    .int('PIXELS_CREATED')
+    .int('PIXELS_MODIFIED')
+    .int('PIXELS_ERASED')
+    .fieldLengthSpecifierFor('TILE_OFFSETS')
+    .intList('TILE_OFFSETS', -1);
+
+export const encoderDiff = encoderDiffMetadata.clone()
+    .fieldLengthSpecifierFor('TILES')
+    .bytes('TILES', -1);
+
+// tiles
+export const encoderTileMetadata = new Encoder()
+    .int('PIXELS_CREATED_TOTAL')
+    .int('PIXELS_MODIFIED_TOTAL')
+    .int('PIXELS_ERASED_TOTAL')
+    .fieldLengthSpecifierFor('PIXEL_GROUP_OFFSETS')
+    .intList('PIXEL_GROUP_OFFSETS', -1)
+
+export const encoderTile = encoderTileMetadata.clone()
+    // tuples of: x, y, r, g, b
+    .fieldLengthSpecifierFor('PIXELS_CREATED')
+    .intList('PIXELS_CREATED', -1)
+    // tuples of: x, y, r, g, b
+    .fieldLengthSpecifierFor('PIXELS_MODIFIED')
+    .intList('PIXELS_MODIFIED', -1)
+    // tuples of: x, y
+    .fieldLengthSpecifierFor('PIXELS_ERASED')
+    .intList('PIXELS_ERASED', -1);

@@ -5,12 +5,13 @@ import fs from 'fs-extra';
 import { glob } from 'glob';
 const { logFatalAndThrow } = new Logger(getModuleFilenameNoExt(__filename));
 
-let command: string;
-switch (process.platform) {
-    case 'win32': command = 'type'; break;
-    case 'linux': command = 'cat'; break;
-    default: logFatalAndThrow(`unsupported platform '${process.platform}'`); throw '';//type guard
-}
+const command = (() => {
+    switch (process.platform) {
+        case 'win32': return 'type';
+        case 'linux': return 'cat';
+        default: logFatalAndThrow(`unsupported platform '${process.platform}'`); throw '';//type guard
+    }
+})();
 
 /**
  * Concatenates files using a Glob pattern.
@@ -23,11 +24,11 @@ switch (process.platform) {
  * @throws {Error} If no filepaths match the Glob pattern.
  */
 export async function concatFilesGlob(globPattern: string, out: string): Promise<void> {
-    const filepaths = await glob(globPattern);
+    const filepaths = await (await glob(globPattern)).sort();
     if (filepaths.length === 0)
         logFatalAndThrow("concat failed: no files matched glob: " + globPattern);
 
-    await concatFilesPaths(filepaths, out);
+    await concatFilepaths(filepaths, out);
 }
 
 /**
@@ -40,12 +41,19 @@ export async function concatFilesGlob(globPattern: string, out: string): Promise
  * @param cwd Working directory.
  * @throws {Error} If files array is empty.
  */
-export async function concatFilesPaths(filepaths: string[], out: string): Promise<void> {
+export async function concatFilepaths(filepaths: string[], out: string): Promise<void> {
     if (filepaths.length === 0)
         logFatalAndThrow("concat failed: no filepaths provided");
 
-    await spawn(command, {
+    const res = await spawn(command, {
         args: filepaths,
         stdout: fs.createWriteStream(out)
     });
+    // if (res.isErr())
+    //     logFatalAndThrow({
+    //         msg: "concat failed",
+    //         data: {
+    //             error: res.error
+    //         }
+    //     })
 }

@@ -7,12 +7,12 @@ import humanizeDuration from "humanize-duration"
 // @ts-ignore no types
 import humanizeNumber from 'humanize-number'
 import { confirm } from '@inquirer/prompts'
-import { formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$src/lib/formatters'
+import { formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$lib/utils/formatters'
 import { TileFetchQueue } from '$lib/TileFetchQueue'
 import { Cycler } from '$lib/Cycler'
 import { mapDimensionsInTiles } from '$src/constants'
 import { noop } from '$utils/noop'
-import { TilePosition } from '$lib/TilePosition'
+import { TilePosition } from '$lib/utils/TilePosition'
 import type { RegionOpts, GeneralOpts } from '$cli/types'
 const logger = new Logger("mode-region");
 const { logInfo, logError, logWarn } = logger;

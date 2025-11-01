@@ -1,6 +1,6 @@
-import { getTileLogPrefix } from '$lib/logging';
-import { getExpDelayCalculator, isRetryableResponse, tryGetResponseBodyAsText } from '$lib/network';
-import { stringifyErr } from '$lib/result';
+import { getTileLogPrefix } from '$lib/utils/logging';
+import { getExpDelayCalculator, isRetryableResponse, tryGetResponseBodyAsText } from '$lib/utils/network';
+import { stringifyErr } from '$lib/utils/result';
 import { stringify } from '$lib/stringify';
 import { Logger } from '$utils/logger';
 import type { TileImage } from '$src/types';
@@ -9,7 +9,7 @@ import chalk from 'chalk';
 import { err, ok, type Result } from 'neverthrow';
 import PQueue from 'p-queue';
 import humanizeDuration from 'humanize-duration';
-import type { TilePosition } from '$lib/TilePosition';
+import type { TilePosition } from '$lib/utils/TilePosition';
 import type { FnWriteError } from '$lib/Cycler';
 import { fetch, Agent } from 'undici';
 import { SigintConfirm } from '$utils/sigintConfirm';

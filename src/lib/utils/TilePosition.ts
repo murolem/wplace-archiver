@@ -1,7 +1,7 @@
 import z from 'zod';
 import { Vector2 } from '$lib/vector';
 import { mapDimensionsInTiles } from '$src/constants';
-import { lat2tile, lon2tile } from '$lib/converters';
+import { lat2tile, lon2tile } from '$lib/utils/converters';
 
 const tilePosComponentSchema = z.number().int().min(0).max(2047);
 

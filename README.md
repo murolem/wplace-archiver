@@ -4,6 +4,27 @@ An CLI archiver utility for wplace.live. Preserve 🧡
 
 Currently archived: see [wplace-archives](https://github.com/murolem/wplace-archives).
 
+## Table of contents
+
+-   [Usage](#usage)
+-   [Positions](#positions)
+-   [Modes](#modes)
+    -   [Grabby \[leaderboards\]](#grabby-leaderboards)
+    -   [Grabby](#grabby)
+    -   [Region](#region)
+    -   [World](#world)
+-   [Continuous archival](#continuous-archival)
+-   [Rate limiting](#rate-limiting)
+    -   [Freebind](#freebind)
+-   [Archives repo](#archives-repo)
+    -   [Downloading archives](#downloading-archives)
+-   [Developing](#developing)
+    -   [Setup](#setup)
+    -   [Running](#running)
+    -   [Building](#building)
+    -   [Creating a release](#creating-a-release)
+    -   [Uploading a release](#uploading-a-release)
+
 ## Usage
 
 This is Command Line Utility, meaning it will only run through console/terminal. Just running the EXE file **will not work**.
@@ -237,6 +258,15 @@ To view options:
 ```bash
 bun run sync --help
 ```
+
+#### Filter examples
+
+| Code                   | Description                                    |
+| ---------------------- | ---------------------------------------------- |
+| `-q world-2025-09-21*` | Fetch releases from September 21st, 2025.      |
+| `-q world-2025-10*`    | Fetch releases from the month of October 2025. |
+| `-q world-2025*`       | Fetch releases from the year of 2025.          |
+| `-q world*`            | Fetch all the `world` releases.                |
 
 ## Developing
 

@@ -15,6 +15,7 @@
     "fetch-retry": "^6.0.0",
     "freebind": "^0.2.2",
     "fs-extra": "^11.3.2",
+    "get-folder-size": "^5.0.0",
     "glob": "^11.0.3",
     "humanize-duration": "^3.33.1",
     "humanize-number": "^0.0.2",

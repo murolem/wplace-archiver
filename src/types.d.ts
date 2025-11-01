@@ -1,4 +1,4 @@
-import type { TilePosition } from '$lib/TilePosition'
+import type { TilePosition } from '$lib/utils/TilePosition'
 import type { leaderboardPeriods } from '$src/cli'
 import type { PlaceRaw } from '$src/saveGrabbyLeaderboardsByRegion'
 import type { Region } from '$src/saveRegion'

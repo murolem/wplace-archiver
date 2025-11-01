@@ -1,15 +1,15 @@
 import { Logger } from '$utils/logger'
 import type { Place } from '$src/types'
 import chalk from 'chalk'
-import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$src/lib/formatters'
+import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$lib/utils/formatters'
 import { Cycler, type FnGetErrorWriteFilepath, type FnGetTileWriteFilepath, type FnMarkFilepathWritten } from '$lib/Cycler'
-import { TilePosition } from '$lib/TilePosition'
+import { TilePosition } from '$lib/utils/TilePosition'
 import { err, ok } from 'neverthrow'
 import { countries } from '$lib/countries'
 import { z } from 'zod'
 import sanitizeFilename from 'sanitize-filename'
 import { saveGrabby } from '$src/saveGrabby'
-import { isRetryableResponse } from '$lib/network'
+import { isRetryableResponse } from '$lib/utils/network'
 import type { GrabbyByRegionOpts, GeneralOpts } from '$cli/types'
 const modeLogger = new Logger("grabby leaderboard by-region");
 const { logInfo, logError, logWarn, logFatal } = modeLogger;

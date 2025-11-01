@@ -2,6 +2,7 @@ archives
 archives-sync
 *.log
 wa
+working
 
 # Logs
 logs

@@ -10,7 +10,7 @@ import { minimatch } from 'minimatch';
 import { err, ok } from 'neverthrow';
 import { checkIntegrity } from '$tasks/utils/checkIntegrity';
 import { getIntRangeParser } from '$cli/parsers';
-import { formatProgressToPercentage } from '$lib/logging';
+import { formatProgressToPercentage } from '$lib/utils/logging';
 import { filesize as prettyFilesize } from "filesize";
 import { validateCommandExistsSync } from '$tasks/utils/validateCommandExists';
 import { fetchChunked } from '$tasks/utils/fetchChunked';
