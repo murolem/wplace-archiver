@@ -3,23 +3,61 @@ import { Logger } from '$logger';
 import fs from 'fs-extra';
 const { logFatalAndThrow } = new Logger("DiffFile/diff");
 
-export type PixelPosition = {
-    x: number,
-    y: number
+/** Same as `<<`, but supports operations past 32 bit. */
+function shiftLeft(number: number, shift: number) {
+    return number * Math.pow(2, shift);
 }
 
-export type PixelColor = {
-    r: number,
-    g: number,
-    b: number
+/** Same as `>>>`, but supports operations past 32 bit. */
+function shiftRightUnsigned(number: number, shift: number) {
+    return Math.trunc(number / Math.pow(2, shift));
 }
 
-export type Pixel = PixelPosition & PixelColor;
-
-export type DiffResult = {
-    set: Pixel[],
-    erase: PixelPosition[]
+/** Same as `|`, but supports operations past 32 bit. */
+function bitwiseOr(a: number, b: number): number {
+    let result: number = 0;
+    let n: number = 1;
+    while ((a > 0) || (b > 0)) {
+        if (((a % 2) == 1) || ((b % 2) == 1)) {
+            result += n;
+        }
+        a = Math.trunc(a / 2);
+        b = Math.trunc(b / 2);
+        n = n * 2;
+    }
+    return result;
 }
+
+/** Same as `&`, but supports operations past 32 bit. */
+function bitwiseAnd(a: number, b: number): number {
+    let result: number = 0;
+    let n: number = 1;
+    while ((a > 0) || (b > 0)) {
+        if (((a % 2) == 1) && ((b % 2) == 1)) {
+            result += n;
+        }
+        a = Math.trunc(a / 2);
+        b = Math.trunc(b / 2);
+        n = n * 2;
+    }
+    return result;
+}
+
+const BITMASK_X = (2 ** 10 - 1);
+const BITMASK_Y = (2 ** 10 - 1) << 10;
+const BITMASK_RGBA = shiftLeft(2 ** 32 - 1, 20);
+
+const decodeDiffResult = (encoded: number): { x: number, y: number, rgba: number } => {
+    return {
+        x: encoded & BITMASK_X,
+        y: (encoded & BITMASK_Y) >> 10,
+        rgba: shiftRightUnsigned(bitwiseAnd(encoded, BITMASK_RGBA), 20)
+    }
+}
+
+
+/** TODO: write desc */
+export type DiffResult = number[];
 
 /**
  * Diffs 2 images, returning a record mapping type of change to UInt32 pixels (4 channels).
@@ -39,48 +77,41 @@ export async function diffImages(baseImageFilepath: string, topImageFilepath: st
     const width = baseBitmap.width;
     const height = baseBitmap.height;
 
-    // check if images are identical
-    const len = width * height;
-    const a32 = new Uint32Array(baseBitmap.data.buffer, len);
-    const b32 = new Uint32Array(topBitmap.data.buffer, len);
-    let identical = true;
+    const pixelsTotal = width * height;
+    const base32 = new Uint32Array(baseBitmap.data.buffer, pixelsTotal);
+    const top32 = new Uint32Array(topBitmap.data.buffer, pixelsTotal);
 
+    let identical = true;
     // compare each pixel
-    for (let i = 0; i < len; i++) {
-        if (a32[i] !== b32[i]) { identical = false; break; }
+    for (let i = 0; i < pixelsTotal; i++) {
+        if (base32[i] !== top32[i]) { identical = false; break; }
     }
     if (identical) { // fast path if identical
-        return { set: [], erase: [] };
+        return [];
     }
 
     // compare each pixel of one image against the other one
     const transparent32 = 256;
-    const res: DiffResult = { set: [], erase: [] };
+    const res: DiffResult = [];
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const i = y * width + x;
             const pos = i * 4;
 
-            if (a32[i] === b32[i])
+            if (base32[i] === top32[i])
                 continue;
 
-            // const a1 = baseBitmap.data[pos + 3];
-            const a2 = topBitmap.data[pos + 3];
+            const pixel32 = top32[i];
 
-            if (a2 === 0) {
-                // created or modified
-                // res.set.push({
-                //     x, y,
-                //     r: topBitmap.data[pos],
-                //     g: topBitmap.data[pos + 1],
-                //     b: topBitmap.data[pos + 2],
-                // });
-            } else {
-                // erased
-                // res.erase.push({
-                //     x, y,
-                // });
-            }
+            const encoded = bitwiseOr(
+                x // x; offset 0 size 10
+                | (y << 10), // y; offset 10 size 10
+                shiftLeft(pixel32, 20) // rgba; offset 20 size 32
+            );
+
+            // const decoded = decodeDiffResult(encoded);
+
+            res.push(encoded);
         }
     }
 
@@ -93,24 +124,30 @@ export async function asIs(imageFilepath: string): Promise<DiffResult> {
     const width = bitmap.width;
     const height = bitmap.height;
 
-    const res: DiffResult = { set: [], erase: [] };
-    // for (let y = 0; y < height; y++) {
-    //     for (let x = 0; x < width; x++) {
-    //         const i = y * width + x;
-    //         const pos = i * 4;
+    const pixelsTotal = width * height;
+    const bitmap32 = new Uint32Array(bitmap.data.buffer, pixelsTotal);
 
-    //         // check alpha channel, skip empty pixels
-    //         if (bitmap.data[pos + 3] === 0)
-    //             continue;
+    const res: DiffResult = [];
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const i = y * width + x;
+            const pos = i * 4;
 
-    //         res.set.push({
-    //             x, y,
-    //             r: bitmap.data[pos],
-    //             g: bitmap.data[pos + 1],
-    //             b: bitmap.data[pos + 2],
-    //         });
-    //     }
-    // }
+            // check alpha channel, skip empty pixels
+            if (bitmap.data[pos + 3] === 0)
+                continue;
+
+            const pixel32 = bitmap.data[i];
+
+            const encoded = bitwiseOr(
+                x // x; offset 0 size 10
+                | (y << 10), // y; offset 10 size 10
+                shiftLeft(pixel32, 20) // rgba; offset 20 size 32
+            );
+
+            res.push(encoded);
+        }
+    }
 
     return res;
 }

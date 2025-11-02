@@ -19,7 +19,7 @@ type ArchiveDiffInfo = {
     tiles: TileStringPosition[],
     tilePaths: Map<TileStringPosition, string>,
     hashes: Map<TileStringPosition, string>,
-    // sizes: Map<TileStringPosition, number>
+    sizes: Map<TileStringPosition, number>
 }
 
 /**
@@ -132,14 +132,14 @@ export class DiffFile {
 
                     // logInfo("new tile")
                     diffs.set(strTilePos, await asIs(topInfo.tilePaths.get(strTilePos)!));
-                    // } else if (baseInfo.sizes.get(strTilePos) !== topInfo.sizes.get(strTilePos)) {
-                    //     // if size mismatch, diff needed
+                } else if (baseInfo.sizes.get(strTilePos) !== topInfo.sizes.get(strTilePos)) {
+                    // if size mismatch, diff needed
 
-                    //     diffs.set(strTilePos, await diffImages(
-                    //         baseInfo.tilePaths.get(strTilePos)!,
-                    //         topInfo.tilePaths.get(strTilePos)!
-                    //     ));
-                    //     // diffs.set(strTilePos, '1')
+                    diffs.set(strTilePos, await diffImages(
+                        baseInfo.tilePaths.get(strTilePos)!,
+                        topInfo.tilePaths.get(strTilePos)!
+                    ));
+                    // diffs.set(strTilePos, '1')
                 } else if (baseInfo.hashes.get(strTilePos) !== topInfo.hashes.get(strTilePos)) {
                     // if hash mismatch, diff needed
 
@@ -222,11 +222,11 @@ export class DiffFile {
 
 
         const jobQueue = new PQueue({ concurrency: concurrency });
-        const sizeAndHashJobPool = new WorkerPool<string[]>('./src/Workers/Jobs/hash.js', parallelism);
+        const sizeAndHashJobPool = new WorkerPool<string[]>('./src/Workers/size_and_hash.js', parallelism);
 
         const startTs = performance.now();
 
-        const resInfo: ArchiveDiffInfo = { tiles: [], tilePaths: new Map(), hashes: new Map() }
+        const resInfo: ArchiveDiffInfo = { tiles: [], tilePaths: new Map(), hashes: new Map(), sizes: new Map() }
         let doneCounter = 0;
         while (true) {
             const strPathsRes = tilePathFetcher.next();
@@ -236,7 +236,7 @@ export class DiffFile {
             const strPaths = strPathsRes.value;
 
             jobQueue.add(async () => {
-                const res = (await sizeAndHashJobPool.runTask(strPaths)) as string[];
+                const res = (await sizeAndHashJobPool.runTask(strPaths)) as [number[], string[]];
                 for (let i = 0; i < strPaths.length; i++) {
                     const strPath = strPaths[i];
 
@@ -246,8 +246,7 @@ export class DiffFile {
                     resInfo.tiles.push(strName);
                     resInfo.tilePaths.set(strName, strPath);
                     // resInfo.sizes.set(strName, res[0][i]);
-                    // resInfo.hashes.set(strName, res[1][i]);
-                    resInfo.hashes.set(strName, res[i]);
+                    resInfo.hashes.set(strName, res[1][i]);
 
                     doneCounter++;
                 }
