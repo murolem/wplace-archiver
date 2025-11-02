@@ -1,4 +1,4 @@
-import { clamp } from '$utils/clamp';
+import { clamp } from '$utils/math/clamp';
 import { Response as ResponseUndici } from 'undici';
 
 export function getExpDelayCalculator(config: {

@@ -1,7 +1,7 @@
 import { program } from '@commander-js/extra-typings';
 import { Logger } from '$logger';
 import * as semver from 'semver';
-import { spawn } from '../src/utils/spawn';
+import { spawn } from '../src/utils/process/spawn';
 import chalk from 'chalk';
 import path from 'path';
 import { z } from 'zod';

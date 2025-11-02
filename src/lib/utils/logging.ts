@@ -1,7 +1,7 @@
 import { mapDimensionsInTilesStrLength } from '$src/constants';
 import type { Position } from '$src/types';
-import { clamp } from '$utils/clamp';
-import { roundToDigit } from '$utils/roundToDigit';
+import { clamp } from '$utils/math/clamp';
+import { roundToDigit } from '$utils/math/roundToDigit';
 import z from 'zod';
 
 const progress01Schema = z.number().min(0).max(1);

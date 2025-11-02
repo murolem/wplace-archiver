@@ -1,6 +1,6 @@
 import { Logger } from '$logger';
-import { clamp } from '$utils/clamp';
-import { getModuleFilenameNoExt } from '$utils/getModuleFilename';
+import { clamp } from '$utils/math/clamp';
+import { getModuleFilenameNoExt } from '$utils/fs/getModuleFilename';
 import fs from 'fs-extra';
 import getFolderSize from "get-folder-size";
 const { logFatalAndThrow } = new Logger("utils/fs/" + getModuleFilenameNoExt(__filename));

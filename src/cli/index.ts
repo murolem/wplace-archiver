@@ -5,7 +5,7 @@ import type { Size } from '$src/types';
 import { Option, program } from '@commander-js/extra-typings';
 import { saveGrabbyLeaderboardsByRegion } from '$src/saveGrabbyLeaderboardsByRegion';
 import { getFloatRangeParser, getIntRangeParser, parseOutPath, parseOutPathsIntermediate, parseSizeOption, parseTilePixelCount, parseTilePositionLike } from '$cli/parsers';
-import { arrayToCopiedExcludingEntry } from '$utils/arrayToCopiedExcludingEntry';
+import { arrayToCopiedExcludingEntry } from '$utils/array/arrayToCopiedExcludingEntry';
 import { defaultErrOutModeGrabby, defaultErrOutModeGrabbyLeaderboardByRegion, defaultErrOutModeRegion, defaultOutModeGrabby, defaultOutModeGrabbyLeaderboardByRegion, defaultOutModeRegion } from '$cli/constants';
 import type { GeneralOpts } from '$cli/types';
 import { outErrorPathHelp, outPathHelp, positionHelpPartFormats } from '$cli/docs';

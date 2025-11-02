@@ -64,25 +64,53 @@ export async function diffImages(baseImageFilepath: string, topImageFilepath: st
             if (a32[i] === b32[i])
                 continue;
 
-            const a1 = baseBitmap.data[pos + 3];
+            // const a1 = baseBitmap.data[pos + 3];
             const a2 = topBitmap.data[pos + 3];
 
             if (a2 === 0) {
                 // created or modified
-                res.set.push({
-                    x, y,
-                    r: topBitmap.data[pos],
-                    g: topBitmap.data[pos + 1],
-                    b: topBitmap.data[pos + 2],
-                });
+                // res.set.push({
+                //     x, y,
+                //     r: topBitmap.data[pos],
+                //     g: topBitmap.data[pos + 1],
+                //     b: topBitmap.data[pos + 2],
+                // });
             } else {
                 // erased
-                res.erase.push({
-                    x, y,
-                });
+                // res.erase.push({
+                //     x, y,
+                // });
             }
         }
     }
+
+    return res;
+}
+
+/** Returns specified image is if it was diffed in its entirety. */
+export async function asIs(imageFilepath: string): Promise<DiffResult> {
+    const bitmap = (await Jimp.read(imageFilepath)).bitmap;
+    const width = bitmap.width;
+    const height = bitmap.height;
+
+    const res: DiffResult = { set: [], erase: [] };
+    // for (let y = 0; y < height; y++) {
+    //     for (let x = 0; x < width; x++) {
+    //         const i = y * width + x;
+    //         const pos = i * 4;
+
+    //         // check alpha channel, skip empty pixels
+    //         if (bitmap.data[pos + 3] === 0)
+    //             continue;
+
+    //         res.set.push({
+    //             x, y,
+    //             r: bitmap.data[pos],
+    //             g: bitmap.data[pos + 1],
+    //             b: bitmap.data[pos + 2],
+    //         });
+    //     }
+    // }
 
     return res;
 }

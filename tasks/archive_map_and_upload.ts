@@ -1,5 +1,5 @@
 import { Logger } from '$logger';
-import { spawn } from '../src/utils/spawn';
+import { spawn } from '../src/utils/process/spawn';
 import { program } from '@commander-js/extra-typings';
 import { getIntRangeParser } from '$cli/parsers';
 import { variableName as vn } from '$cli/utils';

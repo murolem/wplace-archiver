@@ -6,8 +6,8 @@ import { z } from 'zod';
 import { countDown } from '$utils/countDown';
 import type { TilePosition } from '$lib/utils/TilePosition';
 import path from 'path';
-import { PathConverger } from '$utils/convergePaths';
-import { tryPurgeEmptyDirAndEmptyParents } from '$utils/purgeEmptyDirAndEmptyParents';
+import { PathConverger } from '$utils/fs/convergePaths';
+import { tryPurgeEmptyDirAndEmptyParents } from '$utils/fs/purgeEmptyDirAndEmptyParents';
 const logger = new Logger("cycler");
 const { logInfo, logError, logFatal, logFatalAndThrow } = logger;
 

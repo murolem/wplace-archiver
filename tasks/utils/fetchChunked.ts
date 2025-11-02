@@ -1,5 +1,5 @@
 import z from 'zod';
-import { clamp } from '$utils/clamp';
+import { clamp } from '$utils/math/clamp';
 import { Logger } from '$logger';
 import { err, ok, Result } from 'neverthrow';
 const logger = new Logger("fetchChunked")

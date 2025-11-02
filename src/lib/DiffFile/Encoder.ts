@@ -6,7 +6,7 @@ import fsPromises from 'fs/promises';
 import fs from 'fs';
 import { createFileReader } from '$lib/fs/createFileReader';
 import { pipeline } from 'stream/promises';
-import { streamToBuffer } from '$utils/streamToBuffer';
+import { streamToBuffer } from '$utils/converters/streamToBuffer';
 import type { Readable } from 'stream';
 import type { MaybePromise } from 'bun';
 import type { ResultUnwrapped } from '$utils/result';

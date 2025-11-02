@@ -1,7 +1,7 @@
 import readline from 'readline';
 import { Logger } from '$logger';
 import { DeferredPromise } from '$utils/DeferredPromise';
-import { shallowCompareObjects } from '$utils/compareObjects';
+import { shallowCompareObjects } from '$utils/comparators/compareObjects';
 import chalk from 'chalk';
 const logger = new Logger("confirm");
 

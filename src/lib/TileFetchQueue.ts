@@ -4,7 +4,7 @@ import { stringifyErr } from '$lib/utils/result';
 import { stringify } from '$lib/stringify';
 import { Logger } from '$utils/logger';
 import type { TileImage } from '$src/types';
-import { wait } from '$utils/wait';
+import { wait } from '$utils/process/wait';
 import chalk from 'chalk';
 import { err, ok, type Result } from 'neverthrow';
 import PQueue from 'p-queue';
@@ -12,7 +12,7 @@ import humanizeDuration from 'humanize-duration';
 import type { TilePosition } from '$lib/utils/TilePosition';
 import type { FnWriteError } from '$lib/Cycler';
 import { fetch, Agent } from 'undici';
-import { SigintConfirm } from '$utils/sigintConfirm';
+import { SigintConfirm } from '$utils/process/sigintConfirm';
 const { logFatalAndThrow } = new Logger("tile-fetch-queue");
 
 type EnqueueTaskResult = Result<

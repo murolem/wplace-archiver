@@ -1,7 +1,7 @@
 import { Logger } from '$utils/logger'
 import type { Position, Size } from '$src/types'
-import { clamp } from '$utils/clamp'
-import { convertIndexToXyPosition } from '$utils/converters'
+import { clamp } from '$utils/math/clamp'
+import { convertIndexToXyPosition } from '$utils/converters/converters'
 import chalk from 'chalk'
 import humanizeDuration from "humanize-duration"
 // @ts-ignore no types

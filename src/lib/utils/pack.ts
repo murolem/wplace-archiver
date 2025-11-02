@@ -1,13 +1,13 @@
 import { glob } from 'glob';
 import { Logger } from '$logger';
-import { getTempdir as getTempdir } from '$utils/tempdir';
+import { getTempdir as getTempdir } from '$utils/fs/tempdir';
 import path from 'path';
 import cryptoRandomString from 'crypto-random-string';
-import { concatFilesGlob, concatFilepaths } from '$utils/concatFiles';
+import { concatFilesGlob, concatFilepaths } from '$utils/fs/concatFiles';
 import { extract as tarExtract } from 'tar';
 import fs from 'fs-extra';
 import { getTransformOperationProgressEstimator } from '$utils/fs/estimators';
-import { wait } from '$utils/wait';
+import { wait } from '$utils/process/wait';
 import { formatProgressToPercentage } from '$lib/utils/logging';
 const logger = new Logger("pack");
 const { logDebug, logInfo, logFatalAndThrow } = logger;
@@ -68,7 +68,7 @@ export async function ensureArchiveUnpacked(archivePath: string, outDir: string)
 
     // fast path if already unpacked
     if ((await estimateArchivePackState(outDir)).state === 'UNPACKED') {
-        logDebug("already unpacked, skipping unpack")
+        logDebug("already unpacked")
         return outDir;
     }
 

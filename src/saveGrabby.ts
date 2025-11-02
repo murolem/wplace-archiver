@@ -4,13 +4,13 @@ import chalk from 'chalk'
 import { applyNumberUnitSuffix, formatDateToFsSafeIsolike, formatMsToDurationDirnamePart, substituteOutVariables } from '$lib/utils/formatters'
 import { TileFetchQueue } from '$lib/TileFetchQueue'
 import { Cycler } from '$lib/Cycler'
-import { wait } from '$utils/wait'
+import { wait } from '$utils/process/wait'
 import { Jimp } from "jimp";
 import { getTileLogPrefix } from '$lib/utils/logging'
 import { TilePosition } from '$lib/utils/TilePosition'
 import { err, ok, type Result } from 'neverthrow'
 import PQueue from 'p-queue'
-import { SigintConfirm } from '$utils/sigintConfirm'
+import { SigintConfirm } from '$utils/process/sigintConfirm'
 import type { GrabbyOpts, GeneralOpts, OutVariableWeakMap } from '$cli/types'
 import fs from 'fs-extra';
 const modeLogger = new Logger("grabby");

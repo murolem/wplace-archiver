@@ -1,6 +1,6 @@
 import { Logger } from '$logger';
-import { getModuleFilenameNoExt } from '$utils/getModuleFilename';
-import { spawn } from '$utils/spawn';
+import { getModuleFilenameNoExt } from '$utils/fs/getModuleFilename';
+import { spawn } from '$utils/process/spawn';
 import fs from 'fs-extra';
 import { glob } from 'glob';
 const { logFatalAndThrow } = new Logger(getModuleFilenameNoExt(__filename));

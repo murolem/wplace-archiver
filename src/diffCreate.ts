@@ -1,11 +1,11 @@
 import { Logger } from '$utils/logger'
 import type { GeneralOpts, DiffOpts } from '$cli/types'
-import { getTempdir } from '$utils/tempdir'
+import { getTempdir } from '$utils/fs/tempdir'
 import path from 'path'
 import { ensureArchiveUnpacked } from '$lib/utils/pack'
 import cryptoRandomString from 'crypto-random-string'
 import { DiffFile } from '$lib/DiffFile'
-import { toOsPath } from '$utils/toOsPath'
+import { toOsPath } from '$utils/fs/toOsPath'
 const modeLogger = new Logger("diff-create");
 const { logDebug, logInfo, logError, logWarn, logFatalAndThrow } = modeLogger;
 
@@ -42,8 +42,8 @@ const archive2 = "working/world-2025-09-21T21-23-47.681Z/*.tar.gz*";
 const working1Dirpath = await ensureArchiveUnpacked(archive1, "working/w1");
 const working2Dirpath = await ensureArchiveUnpacked(archive2, "working/w2");
 
-const diffFile = await DiffFile.create(
-    toOsPath(`${working1Dirpath}/0/0.png`),
-    toOsPath(`${working2Dirpath}/0/0.png`),
-)
-// console.log(diffFile);
+const diffFile = new DiffFile()
+    .setBaseArchive(working1Dirpath)
+    .appendArchive(working2Dirpath);
+
+await diffFile.diff();
