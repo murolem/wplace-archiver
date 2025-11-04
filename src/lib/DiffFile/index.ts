@@ -93,7 +93,17 @@ export class DiffFile {
         let baseInfo: ArchiveDiffInfo = await this.collectArchiveInfo(this.baseArchiveDirpath);
         let topInfo: ArchiveDiffInfo;
 
+        const concurrency = os.availableParallelism() * 5;
+        const parallelism = os.availableParallelism() * 5;
+        const jobSize = os.availableParallelism();
+        const jobQueueSize = concurrency * 2;
+
+        const jobQueue = new PQueue({ concurrency: concurrency });
+        const diffJobPool = new WorkerPool<string[]>('./src/Workers/Jobs/diffJS.js', parallelism);
+
         const diffs = new Map<string, DiffResult>();
+        let pixelsDiffed = 0;
+        let nextLogAtTs = 0;
         for (const [diffIdx, topDirpath] of this.topArchiveDirpaths.entries()) {
             logInfo(`diffing [${diffIdx}] -> [${diffIdx + 1}]; top archive: ${topDirpath}`);
 
@@ -132,31 +142,36 @@ export class DiffFile {
 
                     // logInfo("new tile")
                     diffs.set(strTilePos, await asIs(topInfo.tilePaths.get(strTilePos)!));
-                    // } else if (baseInfo.sizes.get(strTilePos) !== topInfo.sizes.get(strTilePos)) {
-                    //     // if size mismatch, diff needed
-
-                    //     diffs.set(strTilePos, await diffImages(
-                    //         baseInfo.tilePaths.get(strTilePos)!,
-                    //         topInfo.tilePaths.get(strTilePos)!
-                    //     ));
-                    //     // diffs.set(strTilePos, '1')
                 } else if (baseInfo.hashes.get(strTilePos) !== topInfo.hashes.get(strTilePos)) {
                     // if hash mismatch, diff needed
 
-                    diffs.set(strTilePos, await diffImages(
-                        baseInfo.tilePaths.get(strTilePos)!,
-                        topInfo.tilePaths.get(strTilePos)!
-                    ));
-                    // diffs.set(strTilePos, '1')
+                    jobQueue.add(async () => {
+                        const diff = await diffJobPool.runTask([
+                            baseInfo.tilePaths.get(strTilePos)!,
+                            topInfo.tilePaths.get(strTilePos)!
+                        ])
+                            .catch(err => logFatalAndThrow({ msg: "job error", data: { error: err } }));
+
+                        diffs.set(
+                            strTilePos,
+                            diff
+                        );
+                        pixelsDiffed += diff.length
+
+                        if (performance.now() >= nextLogAtTs) {
+                            logInfo("i: " + i + "; tiles diffed: " + diffs.size.toString() + "; pixels diffed: " + pixelsDiffed);
+                            nextLogAtTs = performance.now() + 1000;
+                        }
+                    });
                 }
 
-                // if (Math.random() < 0.01)
-                // logInfo(i.toString())
-                logInfo(i.toString())
+                await jobQueue.onSizeLessThan(jobQueueSize);
             }
 
-            logInfo(diffs.size.toString())
+            await jobQueue.onIdle();
         }
+
+        diffJobPool.close();
     }
 
     /**

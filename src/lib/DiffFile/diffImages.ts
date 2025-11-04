@@ -55,6 +55,14 @@ const decodeDiffResult = (encoded: number): { x: number, y: number, rgba: number
     }
 }
 
+const encodeDiffResult = (x: number, y: number, rgba: number): number => {
+    return bitwiseOr(
+        x // x; offset 0 size 10
+        | (y << 10), // y; offset 10 size 10
+        shiftLeft(rgba, 20) // rgba; offset 20 size 32
+    );
+}
+
 
 /** TODO: write desc */
 export type DiffResult = number[];
@@ -101,17 +109,9 @@ export async function diffImages(baseImageFilepath: string, topImageFilepath: st
             if (base32[i] === top32[i])
                 continue;
 
-            const pixel32 = top32[i];
-
-            const encoded = bitwiseOr(
-                x // x; offset 0 size 10
-                | (y << 10), // y; offset 10 size 10
-                shiftLeft(pixel32, 20) // rgba; offset 20 size 32
+            res.push(
+                encodeDiffResult(x, y, top32[i])
             );
-
-            // const decoded = decodeDiffResult(encoded);
-
-            res.push(encoded);
         }
     }
 
@@ -137,15 +137,9 @@ export async function asIs(imageFilepath: string): Promise<DiffResult> {
             if (bitmap.data[pos + 3] === 0)
                 continue;
 
-            const pixel32 = bitmap.data[i];
-
-            const encoded = bitwiseOr(
-                x // x; offset 0 size 10
-                | (y << 10), // y; offset 10 size 10
-                shiftLeft(pixel32, 20) // rgba; offset 20 size 32
+            res.push(
+                encodeDiffResult(x, y, bitmap32[i])
             );
-
-            res.push(encoded);
         }
     }
 
