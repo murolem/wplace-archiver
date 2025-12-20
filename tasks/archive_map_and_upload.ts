@@ -8,6 +8,7 @@ import path from 'path';
 import chalk from 'chalk';
 import { DeferredPromise } from '$utils/DeferredPromise';
 import { validateCommandExistsSync } from '$tasks/utils/validateCommandExists';
+import { wait } from '$utils/wait';
 const logger = new Logger("task:archive-map-and-upload");
 const { logInfo, logError, logFatalAndThrow } = logger;
 
@@ -59,6 +60,16 @@ const out = [
 const postStepTasks: Promise<void>[] = [];
 while (true) {
     logInfo("starting archival cycle");
+
+    // delay new task if post step task queue too full (when GH servers are too slow/unavailable)
+    while(true) {
+        // we are (my poor server) okay to have only a single post-task (upload) running.
+        if(postStepTasks.length <= 1)
+            break;
+
+        logInfo(`post-step task queue too full (${postStepTasks.length} tasks), waiting for free`);
+        await wait(30_000);
+    }
 
     const cycleRes = await spawn(`npm run start:freebind --`, {
         noReturnStdout: true,
