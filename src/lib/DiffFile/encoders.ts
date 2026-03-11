@@ -1,9 +1,8 @@
-import { Encoder, type InferEncoderSchema } from '$lib/DiffFile/Encoder';
-import { err, ok } from 'neverthrow';
+import { Encoder } from '$lib/DiffFile/Encoder';
 
-export const DIFF_META_H_MAGIC = "!WPDIFF!";
-export const DIFF_META_H_MAGIC_BYTELEN = Encoder.stringBytelength(DIFF_META_H_MAGIC);
-const DIFF_META_H_PAWPRINT_VARIANTS = [
+export const H_MAGIC = "!WPDIFF!";
+export const H_MAGIC_BYTELEN = Encoder.stringBytelength(H_MAGIC);
+const H_PAWPRINTS = [
     ':3', 'X3', ';3', '>X3',
     '.w.', '•w•', '-w-', 'uwu', 'owo', '~w~', '>w<', '>w>', '<w<', '^w^', '?w?', '!w!',
     '.m.', '•m•', '-m-', 'umu', 'omo', '>m<', '>m>', '<m<', '?m?', '!m!', 'qmq', '•ω•', 'qwq', '^ω^', ';w;', '=w=', '©w©', '%w%', '✓w✓', '™w™', 'TwTlwl', '$w$', ':3c', ':3<', 'ΩwΩ', 'TvT', 'OvO', '(WTF)w(WTF)', 'QAQ', 'QwQ', 'XmX', 'ᚢwᚢ', '0\/\/\/\/\/0', 'UnU', 'OnO', 'TvT', 'TnT', '>-<', 'ÒnÓ', 'ÓnÒ', 'ÒwÓ', 'ÓwÒ', 'ÒmÓ', 'ÓmÒ', 'UwO', 'OwU', 'iwi', 'õwÔ', '-wo', 'ow-', 'ow^', '^wo', '*w*', 'JwJ', 'OωO', 'UωU', 'ඞwඞ',
@@ -11,28 +10,37 @@ const DIFF_META_H_PAWPRINT_VARIANTS = [
     "OωO", "|´・ω・)ノ", "ヾ(≧∇≦*)ゝ", "(☆ω☆)", "（╯‵□′）╯︵┴─┴", "￣﹃￣", "(/ω＼)", "∠( ᐛ 」∠)＿", "(๑•̀ㅁ•́ฅ)", "→_→", "୧(๑•̀⌄•́๑)૭", "٩(ˊᗜˋ*)و", "(ノ°ο°)ノ", "(´இ皿இ｀)", "⌇●﹏●⌇", "(ฅ´ω`ฅ)", "(╯°A°)╯︵○○○", "φ(￣∇￣o)", "ヾ(´･ ･｀｡)ノ\"", "( ง ᵒ̌皿ᵒ̌)ง⁼³₌₃", "(ó﹏ò｡)", "Σ(っ °Д °;)っ", "( ,,´･ω･)ﾉ\"(´っω･｀｡)", "╮(╯▽╰)╭ ", "o(*\/\/\/\/▽\/\/\/\/*)q ", "＞﹏＜", "( ๑´•ω•) \"(ㆆᴗㆆ)"
 ]
 
-const DIFF_META_H_PAWPRINT_MAX_BYTELEN = DIFF_META_H_PAWPRINT_VARIANTS.reduce((maxLen, val) => {
+const H_PAWPRING_PEAK_BYTELEN = H_PAWPRINTS.reduce((maxLen, val) => {
     const len = Encoder.stringBytelength(val);
     return len > maxLen ? len : maxLen;
 }, 0);
 
-// file
-export const encoderFileMagic = new Encoder()
-    .stringLiteral('MAGIC', DIFF_META_H_MAGIC);
 
-export const encoderFileMetadata = encoderFileMagic.clone()
-    .int('VERSION')
-    .enum('DIFF_TYPE', ["DIFFERENTIAL", "INCREMENTAL"])
-    .int('DIFF_COUNT')
-    .fieldLengthSpecifierFor('DIFF_OFFSETS')
-    .intList('DIFF_OFFSETS', -1)
-    .string('PAWPRINT', DIFF_META_H_PAWPRINT_MAX_BYTELEN)
+// ================================
+// tiles
 
-export const encoderFile = encoderFileMetadata.clone()
-    .fieldLengthSpecifierFor('DIFFS')
-    .bytes('DIFFS', -1)
+/** Encodes metadata about individual tile (1000x1000x pixel square). */
+export const tileMetadataEncoder = new Encoder()
+    .int('PIXELS_ADDED')
+    .int('PIXELS_MODIFIED')
+    .int('PIXELS_REMOVED')
 
+/** Encodes information about an individual tile (1000x1000x pixel square). */
+export const tileEncoder = tileMetadataEncoder.clone()
+    .fieldLengthSpecifierFor('ADD_PIXELS')
+    // tuples of: x, y, r, g, b
+    .intList('ADD_PIXELS', -1)
+    .fieldLengthSpecifierFor('MOD_PIXELS')
+    // tuples of: x, y, r, g, b
+    .intList('MOD_PIXELS', -1)
+    .fieldLengthSpecifierFor('REM_PIXELS')
+    // tuples of: x, y
+    .intList('REM_PIXELS', -1);
+
+// ================================
 // diffs
+
+/** Encodes metadata about all tiles. */
 export const encoderDiffMetadata = new Encoder()
     .date('CREATED')
     // change count
@@ -43,25 +51,29 @@ export const encoderDiffMetadata = new Encoder()
     .fieldLengthSpecifierFor('TILE_OFFSETS')
     .intList('TILE_OFFSETS', -1);
 
-export const encoderDiff = encoderDiffMetadata.clone()
+/** Encodes all tiles. */
+export const diffEncoder = encoderDiffMetadata.clone()
     .fieldLengthSpecifierFor('TILES')
-    .bytes('TILES', -1);
+    .encoderList('TILES', tileEncoder);
 
-// tiles
-export const encoderTileMetadata = new Encoder()
-    .int('PIXELS_CREATED_TOTAL')
-    .int('PIXELS_MODIFIED_TOTAL')
-    .int('PIXELS_ERASED_TOTAL')
-    .fieldLengthSpecifierFor('PIXEL_GROUP_OFFSETS')
-    .intList('PIXEL_GROUP_OFFSETS', -1)
+// ================================
+// file
 
-export const encoderTile = encoderTileMetadata.clone()
-    // tuples of: x, y, r, g, b
-    .fieldLengthSpecifierFor('PIXELS_CREATED')
-    .intList('PIXELS_CREATED', -1)
-    // tuples of: x, y, r, g, b
-    .fieldLengthSpecifierFor('PIXELS_MODIFIED')
-    .intList('PIXELS_MODIFIED', -1)
-    // tuples of: x, y
-    .fieldLengthSpecifierFor('PIXELS_ERASED')
-    .intList('PIXELS_ERASED', -1);
+/** Encodes the magic header. */
+export const magicHeaderEncoder = new Encoder()
+    .stringLiteral('MAGIC', H_MAGIC);
+
+/** Encodes magic header and general metadata. */
+export const generalMetadataOnlyEncoder = magicHeaderEncoder.clone()
+    .int('VERSION')
+    .enum('DIFF_TYPE', ["DIFFERENTIAL", "INCREMENTAL"])
+    .int('DIFF_COUNT')
+    .fieldLengthSpecifierFor('DIFF_OFFSETS')
+    .intList('DIFF_OFFSETS', -1)
+    .string('PAWPRINT', H_PAWPRING_PEAK_BYTELEN)
+
+/** Encodes the magic header, general metadata and all data (as bytes). */
+export const generalEncoder = generalMetadataOnlyEncoder.clone()
+    .fieldLengthSpecifierFor('DIFFS')
+    .encoderList('DIFFS', diffEncoder)
+

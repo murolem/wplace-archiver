@@ -3,33 +3,28 @@ import { Logger } from '$logger';
 const { logFatalAndThrow } = new Logger("lib/fs/createReader");
 
 export type FileReader =
-    /** 
-     * Reads specified number of bytes from the file, moved the reader by number of read bytes.
-     * 
-     * If number of bytes read is less than the requested amount, then the end of the stream has been reached,
-     * and what is left has been read.
+   /**
+     * Reads `size` bytes or less and advances. Only reads less if less bytes than requested is available.
+     * Once end is reached, each subsequent read will return 0 bytes.
+     * @param size N bytes to read.
+     * @returns `size` or less bytes.
      */
     (size: number) => Promise<Buffer>;
 
 /**
- * Creates a file reader on the given file.
- * @param filepath 
- * @returns A reader function that reads contents of that file sequentially, in specified byte chunks.
+ * Creates a file reader for file to read in byte chunks.
+ * @param filepath Path to file.
+ * @returns A function to read byte chunks.
  */
-export async function createFileReader(filepath: string): Promise<FileReader> {
+export async function createChunkedFileReader(filepath: string): Promise<FileReader> {
     if (!(await fs.exists(filepath)))
         logFatalAndThrow("failed to read: file does not exists: " + filepath);
 
     const rh = await fs.open(filepath, 'r');
 
-    /** fsdf */
-    const readBytes = async (size: number): Promise<Buffer> => {
+    return async (size: number): Promise<Buffer> => {
         const res = await rh.read(Buffer.alloc(size), 0, size, null);
-        // if (res.bytesRead !== size)
-        //     logFatalAndThrow(`failed to read: requested read of ${size} bytes, but got ${res.bytesRead} bytes`);
 
         return res.buffer;
     }
-
-    return readBytes;
 }

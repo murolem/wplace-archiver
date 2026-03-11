@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import { Logger } from '$logger';
-import { DIFF_META_H_MAGIC, DIFF_META_H_MAGIC_BYTELEN } from '$lib/DiffFile/encoders';
-import { createFileReader } from '$lib/fs/createFileReader';
+import { H_MAGIC, H_MAGIC_BYTELEN } from '$lib/DiffFile/encoders';
+import { createChunkedFileReader } from '$lib/fs/createFileReader';
 import { Encoder } from '$lib/DiffFile/Encoder';
 import path from 'path';
 import PQueue from 'p-queue';
@@ -23,7 +23,7 @@ type ArchiveDiffInfo = {
 }
 
 /**
- * Archive diff file, `.wpd`.
+ * Archive diff file, `.wpd` (from WPlaceDiff)
  * 
  * Represents changes between two or more archives.
  */
@@ -200,9 +200,9 @@ export class DiffFile {
         if (!fs.existsSync(filepath))
             logFatalAndThrow("failed to check if file is a diff file: filepath doesn't exists: " + filepath);
 
-        const read = await createFileReader(filepath);
-        const magic = Encoder.bytesToStr(await read(DIFF_META_H_MAGIC_BYTELEN));
-        return magic === DIFF_META_H_MAGIC;
+        const read = await createChunkedFileReader(filepath);
+        const magic = Encoder.bytesToStr(await read(H_MAGIC_BYTELEN));
+        return magic === H_MAGIC;
     }
 
     /** Collects various information about an archive to use in diffing. */

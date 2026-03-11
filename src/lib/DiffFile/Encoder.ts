@@ -4,7 +4,7 @@ import z from 'zod';
 import { Logger } from '$logger';
 import fsPromises from 'fs/promises';
 import fs from 'fs';
-import { createFileReader } from '$lib/fs/createFileReader';
+import { createChunkedFileReader } from '$lib/fs/createFileReader';
 import { pipeline } from 'stream/promises';
 import { streamToBuffer } from '$utils/converters/streamToBuffer';
 import type { Readable } from 'stream';
@@ -21,27 +21,31 @@ const BYTELEN_NUMBER = 4;
 // padding for strings
 const BYTEPAD_STR = '\0';
 
+// ===================================
+// =========== FIELD TYPES ===========
+// ===================================
+
 /**
  * Describes a regular encoder field that has a name, type and some value.
  */
-type FieldStandard<TName extends string, TType> = {
+type FieldStandard = {
     /** Role of this field. */
     role: 'standard',
 
     /** Field name. */
-    name: TName,
+    name: string,
 
     /** 
      * Field encoder to bytes. 
      * 
      * The encoder field must validate the proper size in bytes on its own before encoding. */
-    encode: (value: TType) => MaybePromise<Buffer>,
+    encode: (value: DecodedField) => EncodeResult,
 
     /** 
      * Field decoder from bytes. 
      * 
      * The bytesize is always guaranteed by the internal decoder to be the exact size specified for this field. */
-    decode: (bytes: Buffer) => MaybePromise<Result<TType, unknown>>,
+    decode: (bytes: EncodedField) => EncodeResult,
 
     /** 
      * Field size in bytes. 
@@ -56,18 +60,18 @@ type FieldStandard<TName extends string, TType> = {
  * 
  * To use this field, a standard field must set its bytelength to `-1`.
  */
-type FieldLengthSpecifier<TName extends string> = {
+type FieldLengthSpecifier = {
     /** Role of this field. */
     role: 'length-specifier',
 
     /** Field name. */
-    name: TName,
+    name: string,
 
     /** Field encoder to bytes. */
-    encode: (value: number) => Buffer,
+    encode: (otherBytelen: number) => EncodeResult,
 
     /** Field decoder from bytes. */
-    decode: (bytes: Buffer) => Result<number, unknown>,
+    decode: (bytes: EncodedField) => Result<number, DecodeError>,
 
     /** Field size in bytes. */
     byteLength: typeof BYTELEN_NUMBER,
@@ -77,68 +81,77 @@ type FieldLengthSpecifier<TName extends string> = {
 }
 
 /** Describes an encoder field. */
-type Field<TName extends string, TType> = FieldStandard<TName, TType> | FieldLengthSpecifier<TName>;
+type Field = FieldStandard | FieldLengthSpecifier;
 
+// type FieldData = string | number;
 
-/** Extracts decoded type wrapped in `Result<..>` from an encoder field definition. */
-type FieldDecodeResultWrapped<T extends Field<any, any>> = Awaited<ReturnType<T['decode']>>;
+// ======================================
+// =========== ENCODING TYPES ===========
+// ======================================
 
-/** Extracts decoded type from an encoder field definition. */
-type FieldDecodeResultUnwrapped<T extends Field<any, any>> = ResultUnwrapped<FieldDecodeResultWrapped<T>>;
+type EncodedField = Buffer;
+type Encoded = Buffer;
 
-/**Extracts `T` record field whose `name` field is equal to `TName`. */
-type ExtractTypeByNameProp<T, TName extends string> = Extract<T, { name: TName }>;
-
-/**
- * Maps an array of field definitions to a record with field names as keys and their types as values.
- */
-export type FieldsRecordUnwrapped<TFieldArr extends Field<any, any>[]> = {
-    [Key in TFieldArr[number]['name']]: FieldDecodeResultUnwrapped<ExtractTypeByNameProp<TFieldArr[number], Key>>;
-}
-
-
-/**
- * Describes a field decode error.
- */
-type FieldDecodeError = {
+type EncodeError = {
     reason: string,
     data: unknown,
     error?: unknown,
 };
 
-/**
- * Describes a field decode result.
- */
-type FieldDecodeResult<T> = Result<T, FieldDecodeError>;
-
-
-/**
- * Describes an encoder decode success.
- */
-export type EncoderDecodeSuccess<T> = {
+type EncodeSuccess = {
     byteLength: number,
-    decoded: T,
+    encoded: Encoded,
+}
+
+type EncodeResult = Result<EncodeSuccess, EncodeError>;
+
+// ======================================
+// =========== DECODING TYPES ===========
+// ======================================
+
+/** Represents a decoded field. */
+type DecodedField = string | number;
+/** Represents a set of decoded fields. */
+type Decoded = Record<string, DecodedField>;
+
+/**
+ * Describes a field decode error.
+ */
+type DecodeError = {
+    reason: string,
+    data: unknown,
+    error?: unknown,
+};
+
+type DecodeSuccess = {
+    byteLength: number,
+    decoded: Decoded,
 }
 
 /**
- * Describes an encoder decode result.
+ * Describes a field decode result.
  */
-export type EncoderDecodeResult<T> = EncoderDecodeSuccess<T>;
+type DecodeResult = Result<DecodeSuccess, DecodeError>;
 
+// ======================================
+// =========== OTHER TYPES ===========
+// ======================================
 
-/**
- * Extracts schema from an encoder.
- */
-export type InferEncoderSchema<T extends Encoder<any>> = ReturnType<T['decode']>;
+// ===============================
+// =========== ENCODER ===========
+// ===============================
 
 /**
  * Byte encoder/decoder. Uses build-like style to construct a schema.
  * 
  * `encode()`/`decode()` methods can then be used to encode data and decode bytes, respectively.
  */
-export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
+export class Encoder {
     /** Internal store of fields. */
-    private fields: Field<any, any>[] = [];
+    private fields: Field[] = [];
+
+    private encodesDoneCounter: number = 0;
+    private decodesDoneCounter: number = 0;
 
     /**
      * Decodes bytes into a string.
@@ -182,17 +195,17 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
 
     /**
      * Creates a new instance of the Encoder.
-     * @param fields Optional field definitions. **You probably want to use {@link Encoder.clone} instead since passing them here does not inherit the types**
+     * @param fields Fields to start with (reused, not copied).
      */
-    constructor(fields?: Field<any, any>[]) {
+    constructor(fields?: Field[]) {
         if (fields)
             this.fields = fields;
     }
 
     /** 
-     * Creates a copy of this encoder instance (with types preserved).
+     * Creates a copy of this encoder instance.
      * 
-     * **Note that the defined fields from the original are reused instead of being copied.**
+     * **Note that the fields are reused instead of being copied.**
      */
     clone(): this {
         return new Encoder([...this.fields]) as any;
@@ -200,12 +213,12 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
 
 
     /**
-     * Encodes a `Record` based on constructed schema to bytes.
+     * Encodes a `Record` to bytes using the defined fields as schema.
      * @param data Data to encode.
      * @returns Bytes.
      */
-    async encode(data: FieldsRecordUnwrapped<T>): Promise<Buffer> {
-        logDebug("starting encode (reverse order)");
+    async encode(data: Decoded): Promise<Buffer> {
+        logDebug(`starting encode #${this.encodesDoneCounter + 1}`);
 
         const buffs: Buffer[] = [];
         // bytelengths of enumerated fields
@@ -218,68 +231,101 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
             const field = this.fields[i];
             logDebug(`|> encoding ${field.role} field '${field.name}'`);
 
-            let buf: Buffer;
-            if (field.role === 'standard') {
-                buf = await field.encode(data[field.name as keyof typeof data]);
-            } else {
-                const targetFieldBytelength = fieldBytelengths[field.forField];
-                if (targetFieldBytelength === undefined) {
-                    logFatalAndThrow({
-                        msg: "encode failed: encountered a bytelength specifier field, but did not encounter a field for which to specify the length for",
-                        data: {
-                            field
-                        }
-                    })
-                    throw '';//type guard
-                }
+            const dataItem = data[field.name] as keyof typeof data | undefined;
 
-                buf = field.encode(targetFieldBytelength);
+            let itemEncodeRes: EncodeResult;
+            let buf: Buffer;
+            switch (field.role) {
+                case 'standard': {
+                    if (dataItem === undefined) {
+                        logFatalAndThrow({
+                            msg: "encode failed: field missing in data",
+                            data: {
+                                name: field.name,
+                                data,
+                                field,
+                            }
+                        });
+                        throw ''//type guard
+                    }
+
+                    itemEncodeRes = field.encode(dataItem);
+                    break;
+                } case 'length-specifier': {
+                    const otherBytelen = fieldBytelengths[field.forField];
+                    if (otherBytelen === undefined) {
+                        logFatalAndThrow({
+                            msg: "encode failed: encountered a bytelength specifier field, but did not encounter a field for which to specify the length for. Make sure the length specifier field is put before the actual field in the schema.",
+                            data: {
+                                field
+                            }
+                        })
+                        throw '';//type guard
+                    }
+
+                    itemEncodeRes = field.encode(otherBytelen);
+                    break;
+                }
             }
 
+            if (itemEncodeRes.isErr()) {
+                logFatalAndThrow({
+                    msg: "encode failed: field encode error",
+                    data: {
+                        name: field.name,
+                        value: dataItem,
+                        error: itemEncodeRes.error,
+                        data,
+                        field,
+                    }
+                });
+                throw ''//type guard
+            }
+
+            buf = itemEncodeRes.value.encoded;
             fieldBytelengths[field.name] = buf.byteLength;
             totalLengthBytes += buf.byteLength;
+            buffs.push(buf);
 
             logDebug(`encoded field to ${buf.byteLength} bytes; bytes so far: ${totalLengthBytes}`);
-
-            buffs.push(buf);
         }
 
+        this.encodesDoneCounter++;
         return Buffer.concat(buffs.reverse(), totalLengthBytes);
     }
 
     /**
-     * A universal decode. Decodes bytes directly or by reading from a filepath, producing a `Record` based on constructed schema.
-     * @param source Data source.
+     * Decodes bytes into a `Record` using the defined fields as schema.
+     * Bytes are either provided directly or as a path to a file.
+     * @param source Data source: path to a file or bytes.
      * @returns Decoded data.
      */
-    async decode(source: Buffer | string): Promise<EncoderDecodeResult<T>> {
-        logDebug("starting decode");
+    async decode(source: Buffer | string): Promise<DecodeResult> {
+        logDebug(`starting decode #${this.decodesDoneCounter + 1}`);
 
+        this.decodesDoneCounter++;
         return await (typeof source === 'string'
-            ? this.decodeFile(source)
+            ? this.decodeFileLazy(source)
             : this.decodeBytes(source)
         );
     }
 
     /**
-     * Reads a file asynchronously, decoding it into a `Record` based on constructed schema.
-     * Bytes are read on per-need basis, meaning any extra bytes will not be read. 
-     * For example, if needing to only read the head with a head schema, only the head segment will be actually read.
+     * Reads file from disk, decoding contents into a `Record` using the defined fields as schema.
+     * Note: bytes are lazily read, so reading only a small section (eg metadata) is cheap.
      * @param filepath Path to file.
      * @returns Decoded data.
      */
-    async decodeFile(filepath: string): Promise<EncoderDecodeResult<T>> {
+    async decodeFileLazy(filepath: string): Promise<DecodeResult> {
         if (!fs.existsSync(filepath))
             logFatalAndThrow("decode file failed: file does not exists: " + filepath);
 
-        const read = await createFileReader(filepath);
+        const read = await createChunkedFileReader(filepath);
 
         const lazyDecoder = this.lazyDecoder();
         for await (const step of lazyDecoder) {
             if (step.done) {
-                // @ts-ignore
-                delete step.done;
-                return step;
+                return step.result;
             } else {
                 const bytes = await read(step.bytesWant);
                 if (bytes.byteLength < step.bytesWant)
@@ -295,19 +341,15 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
     }
 
     /**
-     * Decodes bytes into a `Record` based on constructed schema.
-     * Bytes are read on per-need basis, meaning any extra bytes will not be read. 
-     * For example, if needing to only read the head with a head schema, only the head segment will be actually read.
+     * Decodes bytes into a `Record` using the defined fields as schema.
      * @param filepath Path to file.
      * @returns Decoded data.
      */
-    async decodeBytes(bytes: Buffer): Promise<EncoderDecodeResult<T>> {
+    async decodeBytes(bytes: Buffer): Promise<DecodeResult> {
         const lazyDecoder = this.lazyDecoder();
         for await (const step of lazyDecoder) {
             if (step.done) {
-                // @ts-ignore
-                delete step.done;
-                return step;
+                return step.result;
             } else {
                 step.feedBytes(bytes, true);
             }
@@ -319,52 +361,69 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
     }
 
     /**
-     * A step-by-step decoder that feeds on bytes lazily, requesting chunks from caller.
-     * Uses the built schema to decode the data.
+     * A step-by-step bytes decoder that feeds on bytes lazily, requesting chunks from caller.
+     * Decodes bytes into a `Record` using the defined fields as schema.
      * 
-     * Always guarantees a requested bytesize for each field, otherwise throwing an error.
-     * @returns 
+     * Always guarantees that a field receives the exact amount of bytes it defines, throwing an error otherwise.
+     * @returns Generator.
      */
     private async *lazyDecoder(): AsyncGenerator<{
         /** Whether the decoder is done. When it's done, the result is yielded. */
         done: false,
+        /** How many bytes the decoder wants to read. */
         bytesWant: number,
+        /** How many bytes the decoder read so far. */
         bytesFed: number,
-        bytesFedEnd: number,
+        /** At how many bytes read the decoder will be after the feeding. */
+        bytesFull: number,
+        /**
+         * Feeds the next chunk of bytes to the decoder.
+         * @param bytesSource Byte chunk.
+         * @param useOffset Whether to apply byte offset on the byte chunk. 
+         * - If byte chunk is the entire data source, enable this to go through it step-by-step.
+         * - If byte chunk is provided new on each feeding, do not use this option.
+         */
         feedBytes(bytesSource: Buffer, useOffset?: boolean): void
     } | ({
+        /** Whether the decoder is done. When it's done, the result is yielded. */
         done: true,
-    } & EncoderDecodeResult<T>)
+        result: DecodeResult
+    })
     > {
-        const decodedRecord: Partial<FieldsRecordUnwrapped<T>> = {};
-        // maps field names to their bytelength
-        const bytelengthSpecifiers: Record<string, number> = {};
-        let currentOffsetBytes = 0;
-        for (const field of this.fields) {
+        const decoded: Decoded = {};
+        // contains bytelens for fields with bytelen specifiers
+        const explicitBytelens: Record<string, number> = {};
+        let offsetBytes = 0;
+        for (let i = 0; i < this.fields.length; i++) {
+            const field = this.fields[i];
             logDebug(`<| decoding ${field.role} field '${field.name}'`);
 
             let byteLength = field.byteLength;
             if (byteLength === -1) {
-                byteLength = bytelengthSpecifiers[field.name] ?? -1;
-                if (byteLength === -1) {
+                byteLength = explicitBytelens[field.name];
+                if (byteLength === undefined) {
                     logFatalAndThrow(`decode failed: encountered field '${field.name}' with unknown bytelength and no length specifier field`);
                 }
             }
 
-            const offsetEnd = currentOffsetBytes + byteLength;
+            if (byteLength <= 0) {
+                logFatalAndThrow("zero or negative bytelen encountered");
+            }
+
+            const offsetEnd = offsetBytes + byteLength;
             const bytes = Buffer.alloc(byteLength);
             let bytesFed = false;
             yield {
                 done: false,
                 bytesWant: byteLength,
-                bytesFed: currentOffsetBytes,
-                bytesFedEnd: offsetEnd,
+                bytesFed: offsetBytes,
+                bytesFull: offsetEnd,
                 feedBytes(bytesSource: Buffer, useOffset?: boolean) {
                     if (useOffset) {
                         if (offsetEnd > bytesSource.byteLength)
-                            logFatalAndThrow(`decode failed: attempted to read past buffer (range ${currentOffsetBytes}-${offsetEnd} size ${byteLength}; buffer end at ${bytesSource.byteLength})`);
+                            logFatalAndThrow(`decode failed: attempted to read past buffer (range ${offsetBytes}-${offsetEnd} size ${byteLength}; buffer end at ${bytesSource.byteLength})`);
 
-                        bytesSource.copy(bytes, 0, currentOffsetBytes, offsetEnd);
+                        bytesSource.copy(bytes, 0, offsetBytes, offsetEnd);
                     } else {
                         bytesSource.copy(bytes);
                     }
@@ -376,45 +435,54 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
             if (!bytesFed)
                 logFatalAndThrow("decode failed: expected next chunk of bytes but did not receive any");
             else if (bytes.byteLength < byteLength)
-                logFatalAndThrow(`decode failed: attempted to read past buffer (range ${currentOffsetBytes}-${offsetEnd} size ${byteLength}; buffer end at ${bytes.byteLength}) #2`);
+                logFatalAndThrow(`decode failed: attempted to read past buffer (range ${offsetBytes}-${offsetEnd} size ${byteLength}; buffer end at ${bytes.byteLength}) #2`);
 
-            const decodedWrapped = await field.decode(bytes);
-            if (decodedWrapped.isErr()) {
-                logFatalAndThrow({
-                    msg: `failed to decode field '${field.name}'`,
-                    data: {
-                        error: decodedWrapped.error
+            switch (field.role) {
+                case 'length-specifier': {
+                    const len = await field.decode(bytes);
+                    explicitBytelens[field.forField] = len;
+                    break;
+                } case 'standard': {
+                    const valueRes = await field.decode(bytes);
+                    if (valueRes.isErr()) {
+                        logFatalAndThrow({
+                            msg: `failed to decode field '${field.name}'`,
+                            data: {
+                                error: fieldDecodedRes.error
+                            }
+                        });
+                        throw ''//type guard
                     }
-                });
-                throw ''//type guard
+                    // decoded[field.name] = valueRes;
+                    break;
+                }
             }
 
-            const decoded = decodedWrapped.value;
-            currentOffsetBytes += byteLength;
 
-            if (field.role === 'length-specifier')
-                bytelengthSpecifiers[field.forField] = decoded;
 
-            logDebug(`decoded ${byteLength} bytes; bytes so far: ${currentOffsetBytes}`);
+            const decodedValue = fieldDecodedRes.value;
+            offsetBytes += byteLength;
+            logDebug(`decoded ${byteLength} bytes; bytes so far: ${offsetBytes}`);
 
-            if (field.role === 'standard')
-                decodedRecord[field.name as keyof typeof decodedRecord] = decoded;
+
         }
 
         yield {
             done: true,
-            byteLength: currentOffsetBytes,
-            decoded: decodedRecord as any
+            result: ok({
+                byteLength: offsetBytes,
+                decoded: decoded
+            })
         };
     }
 
 
     /**
-     * Registered a binary field.
+     * Registers a binary field.
      * @param name Field name.
      * @param byteLength Length in bytes. Can be set to `-1` to use a length specifier field instead (must define a length specifier field first).
      */
-    bytes<TName extends string>(name: TName, byteLength: number): Encoder<[...T, FieldStandard<TName, Buffer>]> {
+    bytes<(name: string, byteLength: number): Encoder {
         this.fields.push({
             role: 'standard',
             name,
@@ -449,7 +517,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return dataBuf;
     }
 
-    private bytesDecode = (bytes: Buffer): FieldDecodeResult<Buffer> => {
+    private bytesDecode = (bytes: Buffer): DecodeResult<Buffer> => {
         return ok(bytes);
     }
 
@@ -459,7 +527,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
      * @param byteLength Length in bytes.
      * @returns Encoder with field type registered.
      */
-    string<TName extends string>(name: TName, byteLength: number): Encoder<[...T, FieldStandard<TName, string>]> {
+    string<(name: string, byteLength: number): Encoder {
         this.fields.push({
             role: 'standard',
             name,
@@ -493,7 +561,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return buf;
     }
 
-    private stringDecode = (bytes: Buffer): FieldDecodeResult<string> => {
+    private stringDecode = (bytes: Buffer): DecodeResult<string> => {
         const res = z.string().safeParse(Encoder.bytesToStr(bytes));
         if (res.success) {
             if (res.data.includes(BYTEPAD_STR))
@@ -512,7 +580,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
      * @param literal String literal.
      * @returns Encoder with field type registered.
      */
-    stringLiteral<TName extends string, TLiteral extends string>(name: TName, literal: TLiteral): Encoder<[...T, FieldStandard<TName, TLiteral>]> {
+    stringLiteral<string extends string, TLiteral extends string>(name: string, literal: TLiteral): Encoder {
         const byteLength = textEncoder.encode(literal).byteLength;
         this.fields.push({
             role: 'standard',
@@ -529,7 +597,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return Buffer.from(data);
     }
 
-    private stringLiteralDecode = <TLiteral extends string>(bytes: Buffer, literal: TLiteral): FieldDecodeResult<TLiteral> => {
+    private stringLiteralDecode = <TLiteral extends string>(bytes: Buffer, literal: TLiteral): DecodeResult<TLiteral> => {
         const res = z.literal(literal).safeParse(Encoder.bytesToStr(bytes));
         if (res.success)
             return ok(res.data);
@@ -543,7 +611,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
      * @param name Field name.
      * @returns Encoder with field type registered.
      */
-    int<TName extends string>(name: TName): Encoder<[...T, FieldStandard<TName, number>]> {
+    int<(name: string): Encoder {
         this.fields.push({
             role: 'standard',
             name,
@@ -565,7 +633,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
     }
 
 
-    private intDecode = (bytes: Buffer): FieldDecodeResult<number> => {
+    private intDecode = (bytes: Buffer): DecodeResult<number> => {
         const num = Encoder.bytesToInt(bytes);
         if (isNaN(num))
             return err({ reason: 'integer parse error: conversion failure', data: { bytes }, error: 'NaN' });
@@ -579,7 +647,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
     * @param name Field name.
     * @returns Encoder with field type registered.
     */
-    date<TName extends string>(name: TName): Encoder<[...T, FieldStandard<TName, Date>]> {
+    date<(name: string): Encoder {
         this.fields.push({
             role: 'standard',
             name,
@@ -595,7 +663,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return this.intEncode(date.getTime())
     }
 
-    private dateDecode = (bytes: Buffer): FieldDecodeResult<Date> => {
+    private dateDecode = (bytes: Buffer): DecodeResult<Date> => {
         const msRes = this.intDecode(bytes);
         if (msRes.isErr())
             return err({ reason: "date decode error", data: bytes, error: msRes.error });
@@ -610,7 +678,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
      * @param choices Enum values.
      * @returns Encoder with field type registered.
      */
-    enum<TName extends string, TChoice extends string>(name: TName, choices: TChoice[]): Encoder<[...T, FieldStandard<TName, TChoice>]> {
+    enum<string extends string, TChoice extends string>(name: string, choices: TChoice[]): Encoder {
         this.fields.push({
             role: 'standard',
             name,
@@ -627,7 +695,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return this.intEncode(idx);
     }
 
-    private enumDecode = <TChoice extends string>(bytes: Buffer, choices: TChoice[]): FieldDecodeResult<TChoice> => {
+    private enumDecode = <TChoice extends string>(bytes: Buffer, choices: TChoice[]): DecodeResult<TChoice> => {
         const idxRes = this.intDecode(bytes);
         if (idxRes.isErr())
             return err({ reason: 'enum parse error: failed to parse index', data: {}, error: idxRes.error });
@@ -647,7 +715,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
      * @param separator List separator. Comma `,` by default.
      * @returns Encoder with field type registered.
      */
-    intList<TName extends string>(name: TName, length: number): Encoder<[...T, FieldStandard<TName, number[]>]> {
+    intList<(name: string, length: number): Encoder {
         this.fields.push({
             role: 'standard',
             name,
@@ -677,7 +745,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return buf;
     }
 
-    private intListDecode = (bytes: Buffer): FieldDecodeResult<number[]> => {
+    private intListDecode = (bytes: Buffer): DecodeResult<number[]> => {
         const nums: number[] = [];
 
         let currentByteOffset = 0;
@@ -708,7 +776,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
     // * @param encoder Encoder.
     // * @returns Encoder with field type registered.
     // */
-    // subencoder<TName extends string, TEncoder extends Encoder>(name: TName, encoder: TEncoder): Encoder<[...T, FieldStandard<TName, Awaited<ReturnType<TEncoder['decode']>>>]> {
+    // subencoder<string extends string, TEncoder extends Encoder>(name: string, encoder: TEncoder): Encoder {
     //     this.fields.push({
     //         role: 'standard',
     //         name,
@@ -745,7 +813,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
     // * @param lengthItems Length of the field in items. Can be set to `-1` to use a length specifier field instead (must define a length specifier field first).
     // * @returns Encoder with field type registered.
     // */
-    // subencoderList<TName extends string, TEncoder extends Encoder>(name: TName, encoder: TEncoder, lengthItems: number): Encoder<[...T, FieldStandard<TName, Awaited<ReturnType<TEncoder['decode']>>>]> {
+    // subencoderList<string extends string, TEncoder extends Encoder>(name: string, encoder: TEncoder, lengthItems: number): Encoder {
     //     this.fields.push({
     //         role: 'standard',
     //         name,
@@ -780,7 +848,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
      * @param forField Target field.
      * @returns Encoder.
      */
-    fieldLengthSpecifierFor(forField: string): Encoder<T> {
+    fieldLengthSpecifierFor(forField: string): Encoder {
         this.fields.push({
             role: 'length-specifier',
             name: forField + "_BYTELEN",
@@ -797,7 +865,7 @@ export class Encoder<T extends Field<StringOr<never>, any>[] = []> {
         return this.intEncode(data);
     }
 
-    private fieldLengthSpecifierDecode = (bytes: Buffer): FieldDecodeResult<number> => {
+    private fieldLengthSpecifierDecode = (bytes: Buffer): DecodeResult<number> => {
         return this.intDecode(bytes);
     }
 
