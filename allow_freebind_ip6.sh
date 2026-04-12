@@ -1,0 +1,1 @@
+ip -6 route add local <ip6 address goes here>
