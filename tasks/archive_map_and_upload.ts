@@ -183,8 +183,9 @@ async function enqueuePostMapDownloadTask(): Promise<void> {
 
 
     logInfo(chalk.bgMagenta.bold("purging archived dir"));
-    await fs.rm(archivedDir.dirpath, { force: true, recursive: true });
-
+    for(const dirname of await fs.readdir(archivedDir.dirpath)) {
+        await fs.rm(path.join(archivedDir.dirpath, dirname), { force: true, recursive: true });
+    }
 
     const artifactsPathsRelToCwd = (await fs.readdir(pathToWhereDirsWillAppear))
         .filter(f => f.startsWith(archiveDirpathPattern))
