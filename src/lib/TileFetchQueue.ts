@@ -178,8 +178,10 @@ export class TileFetchQueue {
 
             const responseRes = await fetch(url, {
                 "headers": {
+                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:149.0) Gecko/20100101 Firefox/149.0",
                     "Accept": "image/webp,*/*",
-                    "Accept-Language": "en-US,en;q=0.5"
+                    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Priority": "u=4"
                 },
                 signal: abortCtrl.signal,
                 dispatcher: this._freebindIpv6Subnet
