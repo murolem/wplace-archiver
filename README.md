@@ -1,6 +1,6 @@
 # wplace-archiver
 
-An CLI archiver utility for wplace.live. Preserve 🧡
+CLI archiver utility for wplace.live. Preserve 🧡
 
 Currently archived: see [wplace-archives](https://github.com/murolem/wplace-archives).
 
