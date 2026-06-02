@@ -14,8 +14,11 @@ import { mapDimensionsInTiles } from '$src/constants'
 import { noop } from '$utils/noop'
 import { TilePosition } from '$lib/TilePosition'
 import type { RegionOpts, GeneralOpts } from '$cli/types'
+import { Jimp, ResizeStrategy } from 'jimp'
+import path from 'path';
+import { Vector2 } from '$lib/vector'
 const logger = new Logger("mode-region");
-const { logInfo, logError, logWarn } = logger;
+const { logDebug, logInfo, logError, logWarn } = logger;
 
 export type Region = {
     xy1: Position,
@@ -32,22 +35,22 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
     });
 
     const region = modeOpts.region;
-    const regionSize: Size = {
+    const regionSizeTiles: Size = {
         w: region.xy2.x - region.xy1.x + 1,
         h: region.xy2.y - region.xy1.y + 1,
     }
-    const tilesTotal = regionSize.w * regionSize.h;
+    const tilesTotal = regionSizeTiles.w * regionSizeTiles.h;
 
     const projectedDurationSeconds = clamp(Math.floor(tilesTotal / generalOpts.requestsPerSecond), 1, Infinity);
 
-    logInfo(`archival of region X1 ${chalk.bold(region.xy1.x)} Y1 ${chalk.bold(region.xy1.y)} X2 ${chalk.bold(region.xy2.x)} Y2 ${chalk.bold(region.xy2.y)} (width ${chalk.bold(regionSize.w)} height ${chalk.bold(regionSize.h)}), totalling ${chalk.bold(humanizeNumber(tilesTotal) + " tiles")}. projected duration: ${chalk.bold(humanizeDuration(projectedDurationSeconds * 1000, { conjunction: " and " }))}`);
+    logInfo(`archival of region X1 ${chalk.bold(region.xy1.x)} Y1 ${chalk.bold(region.xy1.y)} X2 ${chalk.bold(region.xy2.x)} Y2 ${chalk.bold(region.xy2.y)} (width ${chalk.bold(regionSizeTiles.w)} height ${chalk.bold(regionSizeTiles.h)}), totalling ${chalk.bold(humanizeNumber(tilesTotal) + " tiles")}. projected duration: ${chalk.bold(humanizeDuration(projectedDurationSeconds * 1000, { conjunction: " and " }))}`);
     if (projectedDurationSeconds > projectDurationLongTimeWarningSeconds) {
         if (!await confirm({ message: chalk.yellow(`The archival is projected to take a long time, continue?`) }))
             return;
     }
 
     const convertTileIndexToTilePos = (index: number): TilePosition => {
-        const localPos = convertIndexToXyPosition(index, regionSize.w);
+        const localPos = convertIndexToXyPosition(index, regionSizeTiles.w);
         return new TilePosition(
             (region.xy1.x + localPos.x) % mapDimensionsInTiles,
             (region.xy1.y + localPos.y) % mapDimensionsInTiles,
@@ -72,8 +75,8 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
                     '%tile_start_y': region.xy1.y.toString(),
                     '%tile_ext': 'png',
                     // mode specific
-                    '%width_tiles': regionSize.w.toString(),
-                    '%height_tiles': regionSize.h.toString(),
+                    '%width_tiles': regionSizeTiles.w.toString(),
+                    '%height_tiles': regionSizeTiles.h.toString(),
                 });
             },
 
@@ -107,6 +110,41 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
                 },
                 tasksCompleted => tasksCompleted / tilesTotal
             )
+        })
+        .post(async function (args) {
+            const baseImage = new Jimp({ width: regionSizeTiles.w * 1000, height: regionSizeTiles.h * 1000 });
+
+            const posGen = getTilePositionGenerator();
+            const tilesMax = regionSizeTiles.w * regionSizeTiles.h;
+            let idx = 0;
+            for(const pos of posGen) {
+                logInfo(`Merging tile ${++idx} of ${tilesMax} potential`);
+                const filepath = path.join(args.tileColumnsDirpath, pos.x.toString(), pos.y + ".png");
+                logDebug("Loading image: " + filepath);
+                baseImage.blit({ 
+                    src: await Jimp.read(filepath),  
+                    x: (pos.x - region.xy1.x) * 1000,
+                    y: (pos.y - region.xy1.y) * 1000,
+                });
+            }
+
+            const cropFactor = 0.75;
+            const translateFactor = new Vector2(.8, 1);
+            const scaleFator = 5;
+
+            logInfo("Cropping");
+            baseImage.crop({ 
+                x: (regionSizeTiles.w * (cropFactor / 2) * translateFactor.x) * 1000,
+                y: (regionSizeTiles.h * (cropFactor / 2) * translateFactor.y) * 1000,
+                w: (regionSizeTiles.w * (cropFactor / 2)) * 1000,
+                h: (regionSizeTiles.h * (cropFactor / 2)) * 1000,
+            })
+            logInfo("Scaling");
+            baseImage.scale({ f: scaleFator, mode: ResizeStrategy.NEAREST_NEIGHBOR })
+
+            const saveFilepath = path.join(args.tileColumnsDirpath, "merged.png");
+            logInfo("Merge complete; saving to: \n" + chalk.gray(saveFilepath));
+            await baseImage.write(saveFilepath as any);
         })
         .start();
 }

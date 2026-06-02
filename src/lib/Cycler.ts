@@ -4,10 +4,12 @@ import fs from 'fs-extra';
 import chalk from 'chalk';
 import { z } from 'zod';
 import { countDown } from '$utils/countDown';
-import type { TilePosition } from '$lib/TilePosition';
+import { TilePosition } from '$lib/TilePosition';
 import path from 'path';
 import { PathConverger } from '$utils/convergePaths';
 import { tryPurgeEmptyDirAndEmptyParents } from '$utils/purgeEmptyDirAndEmptyParents';
+import Emittery from 'emittery';
+import type { MaybePromise } from 'bun';
 const logger = new Logger("cycler");
 const { logInfo, logError, logFatal, logFatalAndThrow } = logger;
 
@@ -111,6 +113,11 @@ export type FnOutputPatternFormatters = {
     post: FnOutputPatternPostFormatter
 };
 
+type CyclerEventMap = {
+    post: {
+        tileColumnsDirpath: string
+    }
+}
 
 /**
  * Cycle iterator. Uses build style invocation.
@@ -122,6 +129,7 @@ export class Cycler {
     private _errorOutputPattern: string | null = null;
     private _tileOutputFilepathFormatters: FnOutputPatternFormatters | null = null;
     private _cycle: FnCycle | null = null;
+    private _eventEmitter = new Emittery<CyclerEventMap>();
 
     /** Sets delay before each cycle. */
     startDelay(delayMs: number): this {
@@ -156,6 +164,12 @@ export class Cycler {
     /** Sets cycle function. */
     cycle(fn: FnCycle): this {
         this._cycle = fn;
+        return this;
+    }
+
+    /** Registers a listener that fires when a cycle finishes. */
+    post(listener: (args: CyclerEventMap['post']) => MaybePromise<void>): this {
+        this._eventEmitter.on('post', e => listener.bind(this)(e.data));
         return this;
     }
 
@@ -259,6 +273,11 @@ export class Cycler {
             const cycleFinished = new Date();
             const cycleElapsedMs = cycleFinished.getTime() - cycleStarted.getTime();
 
+            // <...>/<col>/<row>.png, resolve to <...>
+            let tileColumnsDirpath = path.resolve(getTileWriteFilepath(new TilePosition(1, 1)))
+                .split(path.sep)
+                .at(-2);
+
             if (this._tileOutputFilepathFormatters) {
                 logInfo("running post-stage renaming");
 
@@ -287,14 +306,27 @@ export class Cycler {
                     await tryPurgeEmptyDirAndEmptyParents(pathFrom);
                 }
 
-                if (tileImagePathConverger.convergedPath)
-                    await tryRenamePath(tileImagePathConverger.convergedPath, pathStr => getPostFmtedPath(pathStr, true));
+                if (tileImagePathConverger.convergedPath) {
+                    const postFmtedPath = getPostFmtedPath(tileImagePathConverger.convergedPath, true);
+                    await tryRenamePath(tileImagePathConverger.convergedPath, () => postFmtedPath);
+                    // should point to the column dir already, so no extra processing
+                    tileColumnsDirpath = postFmtedPath;
+                }
 
                 if (errorPathConverger.convergedPath)
                     await tryRenamePath(errorPathConverger.convergedPath, pathStr => getPostFmtedPath(pathStr, false));
 
                 logInfo(chalk.gray("post-stage renaming complete"));
             }
+
+            if(!tileColumnsDirpath && this._eventEmitter.listenerCount('post') > 0) {
+                throw logFatalAndThrow("cycler post callback failed: failed to resolve tile columns dirpath")
+            }
+
+            if(this._eventEmitter.listenerCount('post') > 0) {
+                logInfo("Merging tiles");
+            }
+            await this._eventEmitter.emit('post', { tileColumnsDirpath: tileColumnsDirpath! });
 
             const elapsedFmted = humanizeDuration(cycleElapsedMs, { round: true });
             if (this._loop) {

@@ -46,6 +46,9 @@ program.command("region")
         .default(false)
         .conflicts("--to")
     )
+    .addOption(new Option("--merge", "Create a single image out of the archived tiles.")
+        .default(false)
+    )
     .action(async (xy, opts) => {
         if (generalOpts.v)
             Logger.setLogLevel('DEBUG');
@@ -120,7 +123,7 @@ program.command("region")
             })
         }
 
-        await saveRegion({ region }, generalOptsRes);
+        await saveRegion({ region, merge: opts.merge }, generalOptsRes);
 
         // hard exit in case of a dangling promise
         process.exit();

@@ -1,4 +1,5 @@
 import type { outVariableNames } from '$cli/constants'
+import type { Region } from '$src/saveRegion'
 
 export type GeneralOpts = {
     out: string,
@@ -14,6 +15,7 @@ export type GeneralOpts = {
 
 export type RegionOpts = {
     region: Region,
+    merge: boolean
 }
 
 export type GrabbyOpts = {
