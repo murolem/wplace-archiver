@@ -17,6 +17,8 @@ import type { RegionOpts, GeneralOpts } from '$cli/types'
 import { Jimp, ResizeStrategy } from 'jimp'
 import path from 'path';
 import { Vector2 } from '$lib/vector'
+import fs from 'fs-extra';
+import { wait } from '$utils/wait'
 const logger = new Logger("mode-region");
 const { logDebug, logInfo, logError, logWarn } = logger;
 
@@ -63,9 +65,13 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
         }
     }
 
+    let cyclesDone = 0;
+    let mergeTileInitialIndex = -1;
+    let cycleStartedAtTs = 0;
+
     await new Cycler()
         .loop(generalOpts.loop)
-        .startDelay(generalOpts.cycleStartDelay)
+        .startDelay(0)
         .outputFilepath(generalOpts.out, generalOpts.errOut, {
             pre({ pattern, cycleStarted }) {
                 return substituteOutVariables(pattern, {
@@ -101,6 +107,7 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
             writeTile,
             writeError
         }) => {
+            cycleStartedAtTs = Date.now();
             await tileQueue.enqueue(
                 getTilePositionGenerator,
                 writeError,
@@ -112,7 +119,8 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
             )
         })
         .post(async function (args) {
-            const baseImage = new Jimp({ width: regionSizeTiles.w * 1000, height: regionSizeTiles.h * 1000 });
+            const sleepFor = 60_000;
+            const baseImage = new Jimp({ width: regionSizeTiles.w * 1000, height: regionSizeTiles.h * 1000, color: '#9ebdff' });
 
             const posGen = getTilePositionGenerator();
             const tilesMax = regionSizeTiles.w * regionSizeTiles.h;
@@ -120,31 +128,84 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
             for(const pos of posGen) {
                 logInfo(`Merging tile ${++idx} of ${tilesMax} potential`);
                 const filepath = path.join(args.tileColumnsDirpath, pos.x.toString(), pos.y + ".png");
+                if(!fs.existsSync(filepath))
+                    continue;
+                
                 logDebug("Loading image: " + filepath);
-                baseImage.blit({ 
-                    src: await Jimp.read(filepath),  
-                    x: (pos.x - region.xy1.x) * 1000,
-                    y: (pos.y - region.xy1.y) * 1000,
-                });
+                try {
+
+                    baseImage.blit({ 
+                        src: await Jimp.read(filepath),  
+                        x: (pos.x - region.xy1.x) * 1000,
+                        y: (pos.y - region.xy1.y) * 1000,
+                    });
+                } catch (err) {
+                    logError({ msg: "Merge failed; skipping", data: { error: err } });
+                    return;
+                }
             }
 
-            const cropFactor = 0.75;
-            const translateFactor = new Vector2(.8, 1);
+            const cropFactor = new Vector2(.25, .45);
+            const translateFactor = new Vector2(.35, .2);
+            // translateFactor.y += .1;
             const scaleFator = 5;
 
             logInfo("Cropping");
-            baseImage.crop({ 
-                x: (regionSizeTiles.w * (cropFactor / 2) * translateFactor.x) * 1000,
-                y: (regionSizeTiles.h * (cropFactor / 2) * translateFactor.y) * 1000,
-                w: (regionSizeTiles.w * (cropFactor / 2)) * 1000,
-                h: (regionSizeTiles.h * (cropFactor / 2)) * 1000,
-            })
-            logInfo("Scaling");
-            baseImage.scale({ f: scaleFator, mode: ResizeStrategy.NEAREST_NEIGHBOR })
 
-            const saveFilepath = path.join(args.tileColumnsDirpath, "merged.png");
-            logInfo("Merge complete; saving to: \n" + chalk.gray(saveFilepath));
+            const cropRect = { 
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
+            }
+
+            // const scaleFactor = map(cropFactor, 0, 1, 1, 0);
+
+            cropRect.w = regionSizeTiles.w * 1000 * (1 - cropFactor.x);
+            cropRect.h = regionSizeTiles.h * 1000 * (1 - cropFactor.y);
+
+            cropRect.x = translateFactor.x * regionSizeTiles.w * 1000;
+            cropRect.y = translateFactor.y * regionSizeTiles.h * 1000;
+
+            cropRect.x = Math.floor(cropRect.x);
+            cropRect.y = Math.floor(cropRect.y);
+            cropRect.w = Math.floor(cropRect.w);
+            cropRect.h = Math.floor(cropRect.h);
+
+            baseImage.crop(cropRect)
+            // logInfo("Scaling");
+            // baseImage.scale({ f: .5, mode: ResizeStrategy.NEAREST_NEIGHBOR })
+
+            const saveDirpath = path.join(args.tileColumnsDirpath, "..");
+            const saveFilenamePrefix =  "merged-";
+            if(mergeTileInitialIndex === -1) {
+                if(fs.existsSync(saveDirpath)) {
+                    logInfo("Calculating initial merge file index")
+                    const matchingFiles = await fs.readdir(saveDirpath)
+                        .then(list => list.filter(name => name.startsWith(saveFilenamePrefix) && fs.statSync(path.join(saveDirpath, name)).isFile() ));
+
+                    mergeTileInitialIndex = matchingFiles
+                        .map(item => parseInt(/\d+/.exec(item)?.[0] || "0"))
+                        .sort((a, b) => b - a) // desc
+                        [0] + 1 || 0;
+
+                    logInfo(`Starting with index: ${mergeTileInitialIndex}`);
+                }
+            }
+
+
+            const saveFilepath = path.join(saveDirpath, saveFilenamePrefix + ((mergeTileInitialIndex + cyclesDone).toString().padStart(7, '0')) + ".png");
+            logInfo("Merge complete; saving to: \n" + chalk.gray(path.resolve(saveFilepath)));
             await baseImage.write(saveFilepath as any);
+
+            logInfo(`Removing dir: ` + args.tileColumnsDirpath);
+            fs.removeSync(args.tileColumnsDirpath);
+
+            cyclesDone++;
+            const elapsedSinceCycleStart = Date.now() - cycleStartedAtTs;
+            const sleepForActual = clamp(sleepFor - elapsedSinceCycleStart, 0, Infinity);
+            logInfo(`Sleeping for ${Math.floor(sleepForActual / 1000)} seconds...`);
+            await wait(sleepForActual)
         })
         .start();
 }
