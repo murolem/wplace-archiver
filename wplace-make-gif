@@ -1,0 +1,47 @@
+#!/bin/bash
+set -e
+
+FRAMES_TO_CAPTURE=600
+NTH_FRAME=3
+FPS=30
+REPEATS=-1
+WIDTH=3000
+TEMP_DIRNAME=selected
+FILE_PATTERN="*.png"
+GIF_PATH=$(realpath "../file.gif")
+
+echo "Capturing images"
+rm -rf "$TEMP_DIRNAME"
+mkdir "$TEMP_DIRNAME"
+INDEX=-1
+CAPTURED=0
+LAST_CAPTURED_FILE=""
+LAST_FILE=""
+for file in $(ls $FILE_PATTERN | sort -r); do
+        INDEX=$((INDEX+1))
+
+        if [[ $((INDEX % NTH_FRAME)) -eq 0 ]]; then
+            cp "$file" "$TEMP_DIRNAME"/
+            CAPTURED=$((CAPTURED+1))
+            LAST_CAPTURED_FILE=$file
+        fi
+
+        LAST_FILE="$file"
+        if (( CAPTURED == FRAMES_TO_CAPTURE )); then break; fi
+done
+if [[ "$LAST_CAPTURED_FILE" != "$LAST_FILE" ]]; then
+    cp "$LAST_FILE" "$TEMP_DIRNAME"/
+    CAPTURED=$((CAPTURED+1))
+    LAST_CAPTURED_FILE=$file
+fi
+echo "  Images captured: $CAPTURED"
+
+echo "Generating GIF"
+cd "$TEMP_DIRNAME" 
+/home/aliser/repos/gifski/target/release/gifski --repeat $REPEATS --fps $FPS --width $WIDTH -o "$GIF_PATH" $FILE_PATTERN
+cd ..
+rm -r "$TEMP_DIRNAME"
+
+echo "  Gif generated at: $GIF_PATH"
+gwenview "$GIF_PATH"
+ 
