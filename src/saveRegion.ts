@@ -20,7 +20,7 @@ import { Vector2 } from '$lib/vector'
 import fs from 'fs-extra';
 import { wait } from '$utils/wait'
 const logger = new Logger("mode-region");
-const { logDebug, logInfo, logError, logWarn } = logger;
+const { logDebug, logInfo, logError, logWarn, logFatalAndThrow } = logger;
 
 export type Region = {
     xy1: Position,
@@ -133,7 +133,6 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
                 
                 logDebug("Loading image: " + filepath);
                 try {
-
                     baseImage.blit({ 
                         src: await Jimp.read(filepath),  
                         x: (pos.x - region.xy1.x) * 1000,
@@ -145,10 +144,9 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
                 }
             }
 
-            const cropFactor = new Vector2(.25, .45);
-            const translateFactor = new Vector2(.35, .2);
-            // translateFactor.y += .1;
-            const scaleFator = 5;
+            const cropFactor = new Vector2(.2, .45);
+            const translateFactor = new Vector2(.15, .2);
+            // const scaleFator = 5;
 
             logInfo("Cropping");
 
@@ -160,18 +158,37 @@ export async function saveRegion(modeOpts: RegionOpts, generalOpts: GeneralOpts)
             }
 
             // const scaleFactor = map(cropFactor, 0, 1, 1, 0);
-
+            
+            // use the entire size for crop rect, scaled down by the crop factor
             cropRect.w = regionSizeTiles.w * 1000 * (1 - cropFactor.x);
             cropRect.h = regionSizeTiles.h * 1000 * (1 - cropFactor.y);
 
+            // translate crop rect
             cropRect.x = translateFactor.x * regionSizeTiles.w * 1000;
             cropRect.y = translateFactor.y * regionSizeTiles.h * 1000;
 
+            // align crop rect exactly
             cropRect.x = Math.floor(cropRect.x);
             cropRect.y = Math.floor(cropRect.y);
             cropRect.w = Math.floor(cropRect.w);
             cropRect.h = Math.floor(cropRect.h);
 
+            // ensure crop rect is within image dimensions so that it doesn't wrap
+            if(cropRect.x > regionSizeTiles.w * 1000 + 1 || cropRect.y > regionSizeTiles.h * 1000 + 1)
+                throw logFatalAndThrow({
+                    msg: "merge failed, crop rect top left corner is outside the bounds",
+                    data: {
+                        regionSizeTiles,
+                        cropRect
+                    }
+                });
+
+            const maxWidth = regionSizeTiles.w * 1000 - cropRect.x;
+            cropRect.w = clamp(cropRect.w, 1, maxWidth);
+            const maxHeight = regionSizeTiles.h * 1000 - cropRect.y;
+            cropRect.h = clamp(cropRect.h, 1, maxHeight);
+
+            // finally, crop
             baseImage.crop(cropRect)
             // logInfo("Scaling");
             // baseImage.scale({ f: .5, mode: ResizeStrategy.NEAREST_NEIGHBOR })
